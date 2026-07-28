@@ -6,23 +6,25 @@ Instructions for the AI agent that builds this app. This is the source of truth 
 
 ## What this is
 
-Melos is an AI-powered music generation web app that turns creative prompts into complete multi-track MIDI arrangements (with lyric support). Stack: Python 3.14, Pydantic V2, Pydantic AI, FastAPI, React + TypeScript + Vite, Docker. Versions are pinned at scaffold; lockfiles are authoritative once they exist.
+Melos is an AI-powered music generation web app that turns creative prompts into complete multi-track MIDI arrangements (with lyric support). Stack: Python 3.14, Pydantic V2, Pydantic AI, FastAPI, React + TypeScript + Vite, Docker. LLM access is via OpenRouter or a locally hosted model — see [`docs/tech-stack.md`](docs/tech-stack.md). Versions are pinned at scaffold; lockfiles are authoritative once they exist.
 
 ## Prime directive
 
 **Build the Melos MVP end-to-end, autonomously, until it works — then stop and hand it back.**
 
-You may create spine/integration branches per milestone and smash-merge into the spine branch. A human merges spine → main. Definition of working: every item in [`docs/acceptance.md`](docs/acceptance.md) passes (automated + manual DAW check).
+You may create spine/integration branches per milestone and squash-merge into the spine branch. A human merges spine → main. Definition of working: every item in [`docs/acceptance.md`](docs/acceptance.md) passes (automated + manual DAW check).
 
 ## Definition of done (self-verify — run before every PR is merge-ready)
 
+This block is canonical — other docs link here rather than restating it.
+
 ```bash
-# Exact commands will be finalized in the first CI/scaffold story.
+# Exact scripts are finalized in the first CI/scaffold story.
 # Expected shape (adjust to real scripts once they exist):
 uv run ruff check .
-uv run ty check          # or mypy / pyright equivalent once chosen
+uv run ty check
 uv run pytest
-# frontend:
+# frontend (typecheck = tsc --noEmit):
 npm run lint
 npm run typecheck
 npm run build
@@ -35,8 +37,8 @@ All must pass before you merge.
 
 1. **MIDI generation call outputs only compact JSON.** The dedicated MIDI generation AI call must never emit MIDI binary or any other file format. A deterministic converter turns validated Pydantic models into the `.mid` file.
 2. **Pydantic V2 is the single source of truth.** Use Pydantic models instead of dataclasses everywhere. All structured LLM outputs are validated by Pydantic before use.
-3. **Multi-track MIDI + embedded lyrics from day one.** Generated MIDI must contain multiple tracks and lyric meta events.
-4. **Meta values are hard constraints.** When tempo, key, time signature (etc.) are supplied to the generation call, the model must obey them. Missing meta is resolved upstream before the generation call runs.
+3. **Multi-track MIDI + embedded lyrics from day one.** Generated MIDI must contain multiple tracks, and lyric meta events whenever lyrics are present (not all songs have lyrics).
+4. **Meta values are hard constraints.** When tempo, key, time signature, instrumentation (etc.) are supplied to the generation call, the model must obey them. Missing meta is resolved upstream before the generation call runs.
 5. **Very open licenses only.** Dependencies must use MIT, Apache 2.0, or equivalent permissive licenses. No AGPL or strong copyleft.
 
 ## Code style (deviations only — defaults assumed)
@@ -49,7 +51,7 @@ All must pass before you merge.
 
 - **Always:** research the best-practice approach and verify library/API syntax against current official docs before writing code; run the self-verify commands before finishing a story; follow [`docs/engineering/workflow.md`](docs/engineering/workflow.md); update any affected docs in the **same** PR.
 - **Ask-first → if you're autonomous, STOP-and-flag instead of asking:** schema changes that affect the public compact JSON contract, a new pattern/refactor beyond the task, or anything risky/ambiguous/large.
-- **Never:** commit secrets or `.env`; force-push without asking; merge on red/absent CI or unresolved in-scope review comments; break `main`; add paid services; add speculative generality ("might need it later").
+- **Never:** commit secrets or `.env`; force-push without asking; merge on red/absent CI or unresolved in-scope review comments; break `main`; add paid services beyond the sanctioned LLM API (OpenRouter); add speculative generality ("might need it later").
 
 ## Dependencies
 

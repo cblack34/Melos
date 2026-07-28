@@ -1,6 +1,6 @@
 # Workflow — how the agent plans and ships
 
-You work on **spine/integration branches** per milestone. You may smash-merge completed work into the spine branch. A **human** merges the spine branch into `main`. You do not merge to `main` yourself.
+You work on **spine/integration branches** per milestone. You may squash-merge completed work into the spine branch. A **human** merges the spine branch into `main`. You do not merge to `main` yourself.
 
 ## Two methods: the backbone (horizontal) and milestones (vertical)
 
@@ -20,7 +20,7 @@ You work on **spine/integration branches** per milestone. You may smash-merge co
 
 - Branch per story: `feat/<issue#>-<slug>` (or `fix/…`, `chore/…`) off the spine branch (or off `main` only if no spine exists yet).
 - `Closes #N` in the PR body.
-- Smash-merge into the spine branch once CI is green and review is clean.
+- Squash-merge into the spine branch once CI is green and review is clean.
 - Human merges spine → `main`.
 
 ## The loop (per story)
@@ -34,7 +34,7 @@ You work on **spine/integration branches** per milestone. You may smash-merge co
 7. Adversarial self-review against [`code-quality.md`](code-quality.md).
 8. Open PR into the spine branch with `Closes #N`.
 9. Address review until clean and HEAD-matched.
-10. Smash-merge into spine. Loop.
+10. Squash-merge into spine. Loop.
 
 ## PR review
 
@@ -54,6 +54,6 @@ Every PR after the initial scaffold requires green CI. "Never merge on red CI" i
 - Review loop exhausts its bound with a genuine unresolved issue.
 - Anything ambiguous, risky, or that would break the spine/`main`.
 - Request to force-push without prior human approval.
-- Introduction of a paid service or a dependency with a disallowed license.
+- Introduction of a paid service other than OpenRouter, or a dependency with a disallowed license.
 
 Everything else: keep going.

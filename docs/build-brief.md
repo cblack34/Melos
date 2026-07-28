@@ -46,7 +46,7 @@ These are desired capabilities. The agent is free to define intermediate milesto
    Even the first working version must produce a multi-track file (not a single mixed track) and must carry lyrics as MIDI lyric meta events when lyrics exist. Downstream tools and DAWs expect this shape.
 
 4. **Provided meta values are hard constraints**  
-   When tempo, key, time signature, or similar values are supplied to the generation call, the model must obey them. Missing values are resolved by upstream steps or earlier AI/tool calls so the generation call always receives a complete package.
+   When tempo, key, time signature, instrumentation, or similar values are supplied to the generation call, the model must obey them. Missing values are resolved by upstream steps or earlier AI/tool calls so the generation call always receives a complete package.
 
 5. **Dependency license policy**  
    Only very open licenses (MIT, Apache 2.0, and clear equivalents). No AGPL or other strong copyleft licenses that would force the application itself to be open-sourced.
