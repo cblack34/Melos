@@ -78,6 +78,11 @@ def test_invalid_compact_payloads_rejected(bad: dict[str, object]) -> None:
         CompactSong.model_validate(payload(**bad))
 
 
+@pytest.mark.parametrize("denominator", [1, 2, 4, 8, 16, 32])
+def test_every_valid_time_signature_denominator_accepted(denominator: int) -> None:
+    CompactSong.model_validate(payload(ts=f"4/{denominator}"))
+
+
 def test_extra_keys_rejected_at_every_level() -> None:
     smuggled_channel = {**MELODY_TRACK, "channel": 3}
     with pytest.raises(ValidationError):
