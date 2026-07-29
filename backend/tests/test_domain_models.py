@@ -58,6 +58,29 @@ def test_too_many_melodic_tracks_rejected() -> None:
         song(tracks=tracks)
 
 
+def test_max_melodic_tracks_accepted() -> None:
+    tracks = [track(name=f"T{i}") for i in range(15)]
+    assert len(song(tracks=tracks).tracks) == 15
+
+
+def test_multiple_percussion_tracks_rejected() -> None:
+    drums_a = track(name="DrumsA", is_percussion=True)
+    drums_b = track(name="DrumsB", is_percussion=True)
+    with pytest.raises(ValidationError, match="percussion"):
+        song(tracks=[track(), drums_a, drums_b])
+
+
+def test_single_percussion_track_allowed() -> None:
+    drums = track(name="Drums", is_percussion=True)
+    assert song(tracks=[track(), drums])
+
+
+def test_validate_assignment_rejects_invalid_mutation() -> None:
+    built = song()
+    with pytest.raises(ValidationError):
+        built.tempo_bpm = 99999
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [

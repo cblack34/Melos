@@ -1,6 +1,7 @@
 from io import BytesIO
 
 import mido
+import pytest
 from mido import MidiFile
 
 from melos.domain.models import Note, Song, TimeSignature, Track
@@ -104,3 +105,26 @@ def test_tiny_duration_still_emits_off_after_on() -> None:
     midi = parse(export_song(song))
     events = [msg.type for msg in midi.tracks[1] if msg.type in ("note_on", "note_off")]
     assert events[0] == "note_on" and events[1] == "note_off"
+
+
+def test_smart_punctuation_in_lyric_is_normalized_not_crashed() -> None:
+    song = make_song()
+    song.tracks[0].notes[0].lyric = "don\u2019t\u2014stop"
+    midi = parse(export_song(song))
+    lyrics = [msg.text for msg in midi.tracks[1] if msg.type == "lyrics"]
+    assert lyrics[0] == "don't-stop"
+
+
+def test_accented_title_is_folded_to_latin1() -> None:
+    song = make_song()
+    song.title = "Café Session"
+    midi = parse(export_song(song))
+    track_name = next(msg for msg in midi.tracks[0] if msg.type == "track_name")
+    assert track_name.name == "Cafe Session"
+
+
+def test_non_latin1_lyric_raises_clear_value_error() -> None:
+    song = make_song()
+    song.tracks[0].notes[0].lyric = "日本"  # outside Latin-1, no ASCII fallback
+    with pytest.raises(ValueError, match="Latin-1"):
+        export_song(song)
