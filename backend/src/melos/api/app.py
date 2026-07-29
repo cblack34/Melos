@@ -14,9 +14,12 @@ def create_app(generator: SongGenerator | None = None) -> FastAPI:
     song_generator = generator if generator is not None else StubSongGenerator()
     app = FastAPI(title="Melos")
 
-    @app.post("/api/generate")
+    @app.post("/api/generate", response_class=Response)
     async def generate(request: GenerationRequest) -> Response:
         song = await song_generator.generate(request)
+        # export_song is CPU-bound but sub-ms for realistic songs (benchmarked
+        # ~54ms for an intentionally oversized 8-track/10-min arrangement);
+        # revisit with asyncio.to_thread if profiling ever shows otherwise.
         return Response(
             content=export_song(song),
             media_type="audio/midi",
