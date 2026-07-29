@@ -63,7 +63,8 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(30_000),
+        // Real AI generation on a local model can take minutes.
+        signal: AbortSignal.timeout(900_000),
       })
       if (!response.ok) {
         const responseBody = await response.json().catch(() => null)

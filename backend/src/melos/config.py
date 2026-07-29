@@ -25,6 +25,9 @@ class LlmSettings(BaseSettings):
         env_prefix="MELOS_", env_file=_REPO_ROOT / ".env", extra="ignore"
     )
 
+    # "ai" generates via the configured LLM; "stub" keeps the deterministic
+    # canned generator (frontend dev without a running model).
+    generation_backend: Literal["ai", "stub"] = "ai"
     llm_provider: Literal["ollama", "openrouter"] = "ollama"
     ollama_base_url: str = "http://localhost:11434/v1"
     # Per-task models; defaults are the researched Ollama dev picks.

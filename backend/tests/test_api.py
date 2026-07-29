@@ -7,8 +7,9 @@ from fastapi.testclient import TestClient
 from mido import MidiFile
 
 from melos.api.app import create_app
+from melos.generation.stub import StubSongGenerator
 
-client = TestClient(create_app())
+client = TestClient(create_app(StubSongGenerator()))
 
 
 def generate(payload: Mapping[str, object]) -> bytes:
@@ -79,9 +80,33 @@ def test_tempo_just_outside_boundary_rejected(tempo_bpm: float) -> None:
 
 
 def test_unknown_field_rejected() -> None:
-    """GenerationRequest uses extra="forbid": an unsupported constraint (e.g.
-    an instrument include/exclude filter, deferred to the LLM-generator
-    milestone in issue #3) must fail loudly rather than being silently
-    ignored (non-negotiable #4)."""
-    payload = {"prompt": "x", "must_include_instruments": ["piano"]}
+    """GenerationRequest uses extra="forbid": an unsupported constraint must
+    fail loudly rather than being silently ignored (non-negotiable #4)."""
+    payload = {"prompt": "x", "mood": "happy"}
+    assert client.post("/api/generate", json=payload).status_code == 422
+
+
+def test_instrument_constraints_honored_by_stub() -> None:
+    payload = {
+        "prompt": "trumpet tune, no drums",
+        "include_instruments": ["Trumpet"],
+        "exclude_instruments": ["drums", "Flute"],
+    }
+    midi = MidiFile(file=BytesIO(generate(payload)))
+    programs = {
+        msg.program
+        for track in midi.tracks
+        for msg in track
+        if msg.type == "program_change" and msg.channel != 9
+    }
+    channels = {
+        msg.channel for track in midi.tracks for msg in track if msg.type == "note_on"
+    }
+    assert 56 in programs  # Trumpet present
+    assert 73 not in programs  # Flute excluded
+    assert 9 not in channels  # no percussion
+
+
+def test_unknown_instrument_name_rejected() -> None:
+    payload = {"prompt": "x", "include_instruments": ["Keytar of Destiny"]}
     assert client.post("/api/generate", json=payload).status_code == 422
