@@ -27,4 +27,4 @@ services:
           path: ./frontend/src
           target: /app/src
         - action: rebuild
-          path: ./frontend/package.json
+          path: ./frontend/package-lock.json

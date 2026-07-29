@@ -13,6 +13,29 @@ function filenameFrom(response: Response): string {
   return disposition?.match(/filename="([^"]+)"/)?.[1] ?? 'song.mid'
 }
 
+interface GenerationFormValues {
+  prompt: string
+  tempo: string
+  key: string
+  timeSignature: string
+}
+
+function buildGenerationRequest({
+  prompt,
+  tempo,
+  key,
+  timeSignature,
+}: GenerationFormValues): Record<string, unknown> {
+  const body: Record<string, unknown> = { prompt }
+  if (tempo) body.tempo_bpm = Number(tempo)
+  if (key) body.key = key
+  if (timeSignature) {
+    const [numerator, denominator] = timeSignature.split('/').map(Number)
+    body.time_signature = { numerator, denominator }
+  }
+  return body
+}
+
 function download(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
@@ -35,20 +58,19 @@ export default function App() {
     setBusy(true)
     setError(null)
     try {
-      const body: Record<string, unknown> = { prompt }
-      if (tempo) body.tempo_bpm = Number(tempo)
-      if (songKey) body.key = songKey
-      if (timeSignature) {
-        const [numerator, denominator] = timeSignature.split('/').map(Number)
-        body.time_signature = { numerator, denominator }
-      }
+      const body = buildGenerationRequest({ prompt, tempo, key: songKey, timeSignature })
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(30_000),
       })
       if (!response.ok) {
-        throw new Error(`Generation failed (HTTP ${response.status})`)
+        const responseBody = await response.json().catch(() => null)
+        const detail = Array.isArray(responseBody?.detail)
+          ? responseBody.detail.map((d: { msg: string }) => d.msg).join('; ')
+          : undefined
+        throw new Error(detail ?? `Generation failed (HTTP ${response.status})`)
       }
       download(await response.blob(), filenameFrom(response))
     } catch (err) {
@@ -80,6 +102,7 @@ export default function App() {
               type="number"
               min={20}
               max={400}
+              step="any"
               value={tempo}
               onChange={(e) => setTempo(e.target.value)}
               placeholder="auto"
