@@ -9,7 +9,7 @@ The build is done when the run commands work and every box below holds. Verify b
 (cd backend && uv sync)
 (cd frontend && npm ci)
 
-# App (docker-compose file lands in issue #8 — not yet present)
+# App — UI at http://localhost:5173, API at http://localhost:8000
 docker compose up --build
 ```
 
