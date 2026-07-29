@@ -1,0 +1,34 @@
+[project]
+name = "melos"
+version = "0.1.0"
+description = "AI-powered music generation: creative prompts to multi-track MIDI"
+readme = "README.md"
+authors = [
+    { name = "Clayton", email = "clayton.black@betfanatics.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.140.13",
+    "mido>=1.3.3",
+    "pydantic>=2.13",
+    "uvicorn>=0.51.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.29,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+    "ruff>=0.16.0",
+    "ty>=0.0.64",
+]
+
+[tool.ruff.lint]
+# Curated set — ruff 0.16 enables 413 rules by default, too noisy for signal.
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
