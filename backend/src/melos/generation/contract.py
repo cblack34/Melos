@@ -10,17 +10,22 @@ policy decision passed in by the caller (derived from the user's request), not
 a field the model can emit.
 """
 
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Self
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from melos.domain.models import KeyName, Note, Song, TimeSignature, Track
 
 # Only SMF-valid denominators; a schema-enforcing provider can't emit "4/3".
-_TIME_SIGNATURE_REGEX = r"^\d{1,2}/(?:1|2|4|8|16|32)$"
+# ASCII digits only ([0-9], not \d) so a fullwidth Unicode digit can't sneak
+# through the pattern. Denominators must match TimeSignature.denominator in
+# domain/models.py; keep the two lists in sync by hand.
+_TIME_SIGNATURE_REGEX = r"^[0-9]{1,2}/(?:1|2|4|8|16|32)$"
 
 # Upper bounds are trust-boundary limits on LLM output, not musical judgments:
 # they keep a hallucinating model from emitting unbounded payloads or beat
 # positions that overflow MIDI's variable-length delta encoding.
-_MAX_BEAT = 10_000.0  # ~28 hours at 120 BPM; far beyond any real song
+_MAX_BEAT = 10_000.0  # ~83 min (1.4 h) at 120 BPM; far beyond any real song
 _MAX_NOTES_PER_TRACK = 5_000
 _MAX_TRACKS = 16  # MIDI channel count; domain rules tighten this further
 
@@ -35,6 +40,13 @@ class CompactNote(BaseModel):
     p: int = Field(ge=0, le=127)
     v: int = Field(default=96, ge=1, le=127)
     lyr: str | None = Field(default=None, max_length=50)
+
+    @model_validator(mode="after")
+    def _check_end_within_bound(self) -> Self:
+        end = self.s + self.d
+        if end > _MAX_BEAT:
+            raise ValueError(f"note end (s+d={end}) exceeds {_MAX_BEAT}")
+        return self
 
 
 class CompactTrack(BaseModel):

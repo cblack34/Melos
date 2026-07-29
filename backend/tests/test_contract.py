@@ -83,11 +83,26 @@ def test_extra_keys_rejected_at_every_level() -> None:
     with pytest.raises(ValidationError):
         CompactSong.model_validate(payload(tracks=[smuggled_channel, DRUMS_TRACK]))
 
+    smuggled_note_field = {
+        **MELODY_TRACK,
+        "notes": [{"s": 0, "d": 1, "p": 64, "chan": 3}],
+    }
+    with pytest.raises(ValidationError):
+        CompactSong.model_validate(payload(tracks=[smuggled_note_field, DRUMS_TRACK]))
+
 
 def test_note_beat_positions_are_bounded() -> None:
     runaway = {**MELODY_TRACK, "notes": [{"s": 1e9, "d": 1, "p": 60}]}
     with pytest.raises(ValidationError):
         CompactSong.model_validate(payload(tracks=[runaway, DRUMS_TRACK]))
+
+
+def test_note_end_position_is_bounded_even_when_s_and_d_are_individually_valid() -> (
+    None
+):
+    doubled_end = {**MELODY_TRACK, "notes": [{"s": 10_000, "d": 10_000, "p": 60}]}
+    with pytest.raises(ValidationError):
+        CompactSong.model_validate(payload(tracks=[doubled_end, DRUMS_TRACK]))
 
 
 def test_note_count_per_track_is_bounded() -> None:
@@ -99,8 +114,8 @@ def test_note_count_per_track_is_bounded() -> None:
         CompactSong.model_validate(payload(tracks=[flood, DRUMS_TRACK]))
 
 
-def test_llm_cannot_authorize_sound_effects() -> None:
-    with pytest.raises(ValidationError):
+def test_allow_sound_effects_is_not_a_schema_field() -> None:
+    with pytest.raises(ValidationError, match="allow_sound_effects"):
         CompactSong.model_validate(payload(allow_sound_effects=True))
 
 
@@ -121,3 +136,16 @@ def test_domain_rules_still_gate_mapped_songs() -> None:
     two_drums = payload(tracks=[DRUMS_TRACK, DRUMS_TRACK])
     with pytest.raises(ValidationError):
         to_song(CompactSong.model_validate(two_drums))
+
+
+def test_melodic_track_count_over_domain_cap_rejected_by_to_song() -> None:
+    # schema allows 16 tracks, domain caps melodic tracks at 15
+    all_melodic = payload(tracks=[MELODY_TRACK] * 16)
+    with pytest.raises(ValidationError):
+        to_song(CompactSong.model_validate(all_melodic))
+
+
+def test_time_signature_numerator_out_of_domain_range_rejected_by_to_song() -> None:
+    out_of_range = payload(ts="0/4")  # passes the regex, fails TimeSignature's ge=1
+    with pytest.raises(ValidationError):
+        to_song(CompactSong.model_validate(out_of_range))
