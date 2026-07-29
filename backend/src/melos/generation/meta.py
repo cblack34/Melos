@@ -6,7 +6,7 @@ call downstream always receives a complete package. If nothing is missing, no
 LLM call happens at all.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai import Agent, NativeOutput
 from pydantic_ai.models import Model
 
@@ -24,6 +24,8 @@ _INSTRUCTIONS = (
 
 class ResolvedMeta(BaseModel):
     """The complete meta package the generation call requires."""
+
+    model_config = ConfigDict(extra="forbid")
 
     tempo_bpm: float = Field(ge=20, le=400)
     key: KeyName
@@ -43,6 +45,12 @@ class MetaResolver:
         )
 
     async def resolve(self, request: GenerationRequest) -> ResolvedMeta:
+        """Resolve the complete meta package.
+
+        Raises whatever the underlying pydantic-ai ``Agent.run`` call raises,
+        e.g. ``UnexpectedModelBehavior`` once output-validation retries are
+        exhausted, or ``ModelHTTPError``/``ModelAPIError`` on transport failure.
+        """
         supplied = self._supplied(request)
         if supplied is not None:
             return supplied
