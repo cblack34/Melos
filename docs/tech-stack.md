@@ -10,7 +10,7 @@
 | Local runtime | Docker + Docker Compose | Locked |
 | Python packaging | UV (workspaces if multiple packages) | Locked preference |
 | Python type checking | ty (`uv run ty check`) | Locked — native Pydantic support, same vendor as uv/ruff. Beta: if it blocks a story (missing feature, false positive), fall back to mypy and record the swap here |
-| TypeScript type checking | tsc (`npm run typecheck` = `tsc --noEmit`) | Locked — industry standard |
+| TypeScript type checking | tsc (`npm run typecheck` = `tsc -b --noEmit`, see [`AGENTS.md`](../AGENTS.md#definition-of-done-self-verify--run-before-every-pr-is-merge-ready)) | Locked — industry standard |
 | LLM access | OpenRouter, or a locally hosted model (Ollama / Docker) | Locked — Pydantic AI keeps the model swappable |
 | LLM models | Agent researches and selects per AI task | Delegated — see below |
 | MIDI writing | Deterministic library (e.g. mido) behind an interface | Suggestion — keep binary format out of the LLM |
