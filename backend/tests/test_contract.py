@@ -69,6 +69,8 @@ def test_defaults_applied() -> None:
         {"key": "H"},
         {"tracks": []},
         {"unexpected": 1},  # extra="forbid"
+        {"title": "x" * 201},  # trust-boundary size caps
+        {"tracks": [MELODY_TRACK] * 17},
     ],
 )
 def test_invalid_compact_payloads_rejected(bad: dict[str, object]) -> None:
@@ -80,6 +82,21 @@ def test_extra_keys_rejected_at_every_level() -> None:
     smuggled_channel = {**MELODY_TRACK, "channel": 3}
     with pytest.raises(ValidationError):
         CompactSong.model_validate(payload(tracks=[smuggled_channel, DRUMS_TRACK]))
+
+
+def test_note_beat_positions_are_bounded() -> None:
+    runaway = {**MELODY_TRACK, "notes": [{"s": 1e9, "d": 1, "p": 60}]}
+    with pytest.raises(ValidationError):
+        CompactSong.model_validate(payload(tracks=[runaway, DRUMS_TRACK]))
+
+
+def test_note_count_per_track_is_bounded() -> None:
+    flood = {
+        **MELODY_TRACK,
+        "notes": [{"s": i * 0.1, "d": 0.1, "p": 60} for i in range(5_001)],
+    }
+    with pytest.raises(ValidationError):
+        CompactSong.model_validate(payload(tracks=[flood, DRUMS_TRACK]))
 
 
 def test_llm_cannot_authorize_sound_effects() -> None:
