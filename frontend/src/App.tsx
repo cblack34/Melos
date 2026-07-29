@@ -1,122 +1,144 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
+import { useState, type FormEvent } from 'react'
 import './App.css'
 
-function App() {
-  const [count, setCount] = useState(0)
+const KEYS = [
+  'C', 'G', 'D', 'A', 'E', 'B', 'F#', 'C#', 'F', 'Bb', 'Eb', 'Ab', 'Db', 'Gb', 'Cb',
+  'Am', 'Em', 'Bm', 'F#m', 'C#m', 'G#m', 'D#m', 'A#m', 'Dm', 'Gm', 'Cm', 'Fm', 'Bbm',
+  'Ebm', 'Abm',
+]
+const TIME_SIGNATURES = ['4/4', '3/4', '6/8', '2/4', '12/8']
 
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+function filenameFrom(response: Response): string {
+  const disposition = response.headers.get('content-disposition')
+  return disposition?.match(/filename="([^"]+)"/)?.[1] ?? 'song.mid'
 }
 
-export default App
+interface GenerationFormValues {
+  prompt: string
+  tempo: string
+  key: string
+  timeSignature: string
+}
+
+function buildGenerationRequest({
+  prompt,
+  tempo,
+  key,
+  timeSignature,
+}: GenerationFormValues): Record<string, unknown> {
+  const body: Record<string, unknown> = { prompt }
+  if (tempo) body.tempo_bpm = Number(tempo)
+  if (key) body.key = key
+  if (timeSignature) {
+    const [numerator, denominator] = timeSignature.split('/').map(Number)
+    body.time_signature = { numerator, denominator }
+  }
+  return body
+}
+
+function download(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
+export default function App() {
+  const [prompt, setPrompt] = useState('')
+  const [tempo, setTempo] = useState('')
+  const [songKey, setSongKey] = useState('')
+  const [timeSignature, setTimeSignature] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function generate(event: FormEvent) {
+    event.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      const body = buildGenerationRequest({ prompt, tempo, key: songKey, timeSignature })
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(30_000),
+      })
+      if (!response.ok) {
+        const responseBody = await response.json().catch(() => null)
+        const detail = Array.isArray(responseBody?.detail)
+          ? responseBody.detail.map((d: { msg: string }) => d.msg).join('; ')
+          : undefined
+        throw new Error(detail ?? `Generation failed (HTTP ${response.status})`)
+      }
+      download(await response.blob(), filenameFrom(response))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <main className="melos">
+      <h1>Melos</h1>
+      <p>Describe a song and download it as a multi-track MIDI file.</p>
+      <form onSubmit={generate}>
+        <label>
+          Prompt
+          <textarea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="A dreamy lo-fi tune with a gentle melody…"
+            rows={4}
+            required
+          />
+        </label>
+        <div className="constraints">
+          <label>
+            Tempo (BPM)
+            <input
+              type="number"
+              min={20}
+              max={400}
+              step="any"
+              value={tempo}
+              onChange={(e) => setTempo(e.target.value)}
+              placeholder="auto"
+            />
+          </label>
+          <label>
+            Key
+            <select value={songKey} onChange={(e) => setSongKey(e.target.value)}>
+              <option value="">auto</option>
+              {KEYS.map((k) => (
+                <option key={k} value={k}>
+                  {k}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Time signature
+            <select
+              value={timeSignature}
+              onChange={(e) => setTimeSignature(e.target.value)}
+            >
+              <option value="">auto</option>
+              {TIME_SIGNATURES.map((ts) => (
+                <option key={ts} value={ts}>
+                  {ts}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <button type="submit" disabled={busy || !prompt.trim()}>
+          {busy ? 'Generating…' : 'Generate MIDI'}
+        </button>
+        {error && <p role="alert" className="error">{error}</p>}
+      </form>
+    </main>
+  )
+}
