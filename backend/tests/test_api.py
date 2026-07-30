@@ -7,8 +7,9 @@ from fastapi.testclient import TestClient
 from mido import MidiFile
 
 from melos.api.app import create_app
+from melos.generation.stub import StubSongGenerator
 
-client = TestClient(create_app())
+client = TestClient(create_app(StubSongGenerator()))
 
 
 def generate(payload: Mapping[str, object]) -> bytes:
@@ -79,9 +80,85 @@ def test_tempo_just_outside_boundary_rejected(tempo_bpm: float) -> None:
 
 
 def test_unknown_field_rejected() -> None:
-    """GenerationRequest uses extra="forbid": an unsupported constraint (e.g.
-    an instrument include/exclude filter, deferred to the LLM-generator
-    milestone in issue #3) must fail loudly rather than being silently
-    ignored (non-negotiable #4)."""
-    payload = {"prompt": "x", "must_include_instruments": ["piano"]}
+    """GenerationRequest uses extra="forbid": an unsupported constraint must
+    fail loudly rather than being silently ignored (non-negotiable #4)."""
+    payload = {"prompt": "x", "mood": "happy"}
     assert client.post("/api/generate", json=payload).status_code == 422
+
+
+def test_instrument_constraints_honored_by_stub() -> None:
+    payload = {
+        "prompt": "trumpet tune, no drums",
+        "include_instruments": ["Trumpet"],
+        "exclude_instruments": ["drums", "Flute"],
+    }
+    midi = MidiFile(file=BytesIO(generate(payload)))
+    programs = {
+        msg.program
+        for track in midi.tracks
+        for msg in track
+        if msg.type == "program_change" and msg.channel != 9
+    }
+    channels = {
+        msg.channel for track in midi.tracks for msg in track if msg.type == "note_on"
+    }
+    assert 56 in programs  # Trumpet present
+    assert 73 not in programs  # Flute excluded
+    assert 9 not in channels  # no percussion
+
+
+def test_unknown_instrument_name_rejected() -> None:
+    payload = {"prompt": "x", "include_instruments": ["Keytar of Destiny"]}
+    assert client.post("/api/generate", json=payload).status_code == 422
+
+
+def test_include_exclude_overlap_rejected() -> None:
+    payload = {
+        "prompt": "x",
+        "include_instruments": ["Flute"],
+        "exclude_instruments": ["flute"],
+    }
+    assert client.post("/api/generate", json=payload).status_code == 422
+
+
+def test_percussion_synonym_overlap_rejected() -> None:
+    """ "Drums" and "percussion" are the same pseudo-instrument
+    (domain/gm.py's ``is_percussion_name``); requiring one while forbidding
+    the other must 422, not silently drop the percussion track (stub) or
+    generate an unsatisfiable constraint pair (AI backend)."""
+    payload = {
+        "prompt": "x",
+        "include_instruments": ["drums"],
+        "exclude_instruments": ["percussion"],
+    }
+    assert client.post("/api/generate", json=payload).status_code == 422
+
+
+def test_prompt_too_long_rejected() -> None:
+    payload = {"prompt": "x" * 4001}
+    assert client.post("/api/generate", json=payload).status_code == 422
+
+
+def test_included_instrument_colliding_with_default_program_gets_renamed() -> None:
+    """Flute is the stub's default melody program (73); requesting it must
+    still produce a track named "Flute", not leave it named "Melody"."""
+    payload = {"prompt": "x", "include_instruments": ["Flute"]}
+    midi = MidiFile(file=BytesIO(generate(payload)))
+    names = [msg.name for t in midi.tracks[1:] for msg in t if msg.type == "track_name"]
+    assert "Flute" in names
+    assert "Melody" not in names
+
+
+def test_included_sound_effect_does_not_crash_stub() -> None:
+    """Sound-effect programs (GM 120-127) are melodic-track-illegal unless
+    Song.allow_sound_effects is set; the stub must set it when the request
+    explicitly asks for one, not 500 on an unset default."""
+    payload = {"prompt": "x", "include_instruments": ["Gunshot"]}
+    midi = MidiFile(file=BytesIO(generate(payload)))
+    programs = {
+        msg.program
+        for track in midi.tracks
+        for msg in track
+        if msg.type == "program_change"
+    }
+    assert 127 in programs

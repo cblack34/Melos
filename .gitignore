@@ -355,3 +355,7 @@ $RECYCLE.BIN/
 *.lnk
 
 # End of https://www.toptal.com/developers/gitignore/api/linux,macos,windows,python,visualstudiocode,jetbrains+all
+
+# Generated quality-run MIDI artifacts
+quality_out/
+

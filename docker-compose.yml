@@ -3,6 +3,16 @@ services:
     build: ./backend
     ports:
       - "8000:8000"
+    environment:
+      # Local Ollama runs on the host; containers reach it via this alias.
+      MELOS_OLLAMA_BASE_URL: http://host.docker.internal:11434/v1
+    extra_hosts:
+      # host.docker.internal is automatic on Docker Desktop (macOS/Windows) but
+      # requires this explicit mapping on plain Docker Engine (Linux).
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - path: .env
+        required: false
     develop:
       watch:
         - action: sync+restart
