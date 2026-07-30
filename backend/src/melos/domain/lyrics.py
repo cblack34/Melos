@@ -21,8 +21,17 @@ from pydantic import BaseModel, ConfigDict, Field
 # Whole-line tags only, so a bracket inside a sung line stays sung. A malformed
 # tag ("[verse 1" with no closer) falls through as lyrics on purpose: the user
 # hears the mistake immediately, which beats an error dialog over a typo.
-_SECTION = re.compile(r"^\s*\[\s*(?P<name>[^\[\]]+?)\s*\]\s*$")
-_DIRECTIVE = re.compile(r"^\s*\{\s*(?P<text>[^{}]+?)\s*\}\s*$")
+#
+# Padding is stripped in Python (see parse_lyrics), not in the pattern: a lazy
+# body (`+?`) followed by a greedy `\s*` that accepts the same characters is
+# catastrophically ambiguous on an unterminated tag whose body is whitespace
+# (e.g. "[" + " " * 8000, which fits GenerationRequest.lyrics's own size
+# limit) — the engine explores every split point between the two quantifiers
+# before concluding there's no closing bracket. Measured against this exact
+# shape of pattern: ~3s at 2,000 spaces, ~24s at 4,000. Keeping the character
+# class as the only quantified, unambiguous span makes matching O(n).
+_SECTION = re.compile(r"^\[(?P<name>[^\[\]]+)\]$")
+_DIRECTIVE = re.compile(r"^\{(?P<text>[^{}]+)\}$")
 
 # Word-boundary markers the model may emit around syllables ("lov-", " er").
 _SYLLABLE_NOISE = re.compile(r"[\s\-_]+")
@@ -54,14 +63,15 @@ def parse_lyrics(raw: str | None) -> LyricsSpec:
     directives: list[str] = []
     sung: list[str] = []
     for line in raw.splitlines():
-        if not line.strip():
+        stripped = line.strip()
+        if not stripped:
             continue
-        if section := _SECTION.match(line):
-            sections.append(section["name"])
-        elif directive := _DIRECTIVE.match(line):
-            directives.append(directive["text"])
+        if (section := _SECTION.match(stripped)) and section["name"].strip():
+            sections.append(section["name"].strip())
+        elif (directive := _DIRECTIVE.match(stripped)) and directive["text"].strip():
+            directives.append(directive["text"].strip())
         else:
-            sung.append(line.strip())
+            sung.append(stripped)
     return LyricsSpec(section_names=sections, directives=directives, sung_lines=sung)
 
 
@@ -71,8 +81,13 @@ def syllable_key(text: str) -> str:
     A model may break "lover" into ``lov`` + ``er`` or ``lov-`` + ``er``, and
     marks new words with a leading space. Casing, punctuation, and those
     markers are all irrelevant to whether the right words came back.
+
+    Normalized to NFC first: accented text from different sources (e.g. NFD
+    from some filesystem/editor paths vs. the NFC an LLM typically emits) is
+    otherwise the same visible word but a different codepoint sequence, which
+    would spuriously fail this comparison.
     """
-    stripped = _SYLLABLE_NOISE.sub("", text.casefold())
+    stripped = _SYLLABLE_NOISE.sub("", unicodedata.normalize("NFC", text).casefold())
     return "".join(
         ch for ch in stripped if not unicodedata.category(ch).startswith("P")
     )

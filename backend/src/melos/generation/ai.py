@@ -7,6 +7,7 @@ validator that sends precise violations back to the model as retries
 (non-negotiable #4). Domain validation via ``to_song`` is the final gate.
 """
 
+import difflib
 from typing import Self
 
 from pydantic import BaseModel, ValidationError
@@ -145,12 +146,17 @@ class Constraints(BaseModel):
             )
             return problems
         wanted = syllable_key(self.lyrics.sung_text)
-        if not any(syllable_key(_sung_text(track)) == wanted for track in singers):
-            closest = max(singers, key=lambda t: len(syllable_key(_sung_text(t))))
+        if not any(syllable_key(_performed_text(track)) == wanted for track in singers):
+            closest = max(
+                singers,
+                key=lambda t: difflib.SequenceMatcher(
+                    None, syllable_key(_performed_text(t)), wanted
+                ).ratio(),
+            )
             problems.append(
                 "one vocal track must sing the supplied lyrics complete and in"
                 f" order; track {closest.name!r} sang"
-                f" {_sung_text(closest)[:120]!r} but the lyrics are"
+                f" {_performed_text(closest)[:120]!r} but the lyrics are"
                 f" {self.lyrics.sung_text[:200]!r}"
             )
         return problems
@@ -172,8 +178,14 @@ def _has_lyrics(track: CompactTrack) -> bool:
     return any(note.lyr for note in track.notes)
 
 
-def _sung_text(track: CompactTrack) -> str:
-    """Syllables in performance order — melisma notes carry no lyr and are skipped."""
+def _performed_text(track: CompactTrack) -> str:
+    """Syllables in performance order — melisma notes carry no lyr and are skipped.
+
+    Named distinctly from ``LyricsSpec.sung_text`` (domain/lyrics.py): that one
+    joins raw request lines with spaces, this one concatenates note-level
+    syllables relying on the model's leading-space word-boundary convention.
+    The two are only safe to compare after both pass through ``syllable_key``.
+    """
     ordered = sorted(track.notes, key=lambda note: note.s)
     return "".join(note.lyr for note in ordered if note.lyr)
 

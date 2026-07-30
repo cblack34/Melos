@@ -15,9 +15,10 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from melos.domain.generator import GenerationRequest
-from melos.domain.models import Song
-from melos.generation.ai import PydanticAISongGenerator
-from melos.generation.meta import MetaResolver
+from melos.domain.models import Song, TimeSignature
+from melos.generation.ai import Constraints, PydanticAISongGenerator
+from melos.generation.contract import CompactSong
+from melos.generation.meta import MetaResolver, ResolvedMeta
 from melos.midi.exporter import CHARSET, export_song
 
 LYRICS = "[verse 1]\nCarry me home\n[chorus]\nInto the light"
@@ -274,6 +275,49 @@ async def test_instrumental_request_needs_no_vocals() -> None:
     )
     song = await generate([instrumental], lyrics=None)
     assert not any(track.is_vocal for track in song.tracks)
+
+
+def test_closest_singer_is_picked_by_similarity_not_length() -> None:
+    """The retry feedback must name the track that's actually closest to the
+    wanted lyrics, not whichever vocal track happens to have more characters.
+    """
+    request = GenerationRequest.model_validate(
+        {"prompt": "a song", "lyrics": "Carry me home tonight"}
+    )
+    meta = ResolvedMeta(
+        tempo_bpm=100, key="C", time_signature=TimeSignature(numerator=4, denominator=4)
+    )
+    constraints = Constraints.from_request(request, meta)
+    compact_song = CompactSong.model_validate(
+        {
+            "title": "T",
+            "bpm": 100.0,
+            "key": "C",
+            "ts": "4/4",
+            "tracks": [
+                {  # genuinely closest: the same words, one short
+                    "name": "Lead Vocal",
+                    "prog": 53,
+                    "voc": True,
+                    "notes": [
+                        {"s": 0, "d": 1, "p": 60, "lyr": "Carry"},
+                        {"s": 1, "d": 1, "p": 62, "lyr": " me"},
+                        {"s": 2, "d": 1, "p": 64, "lyr": " home"},
+                    ],
+                },
+                {  # unrelated text, but longer once flattened
+                    "name": "Harmony",
+                    "prog": 53,
+                    "voc": True,
+                    "notes": [{"s": 0, "d": 1, "p": 60, "lyr": "zzzqqqqqqqqqq"}],
+                },
+                {"name": "Bass", "prog": 33, "notes": [{"s": 0, "d": 8, "p": 40}]},
+            ],
+        }
+    )
+    problems = constraints.violations(compact_song)
+    assert any("'Lead Vocal'" in problem for problem in problems)
+    assert not any("'Harmony'" in problem for problem in problems)
 
 
 @pytest.mark.anyio

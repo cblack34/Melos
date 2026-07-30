@@ -1,6 +1,10 @@
 """Parsing the lyrics field: [sections], {directives}, and sung text."""
 
+import time
+import unicodedata
+
 import pytest
+from pydantic import ValidationError
 
 from melos.domain.generator import GenerationRequest
 from melos.domain.lyrics import parse_lyrics, syllable_key
@@ -69,6 +73,37 @@ def test_tags_may_be_padded_with_whitespace() -> None:
     assert spec.directives == ["soft drums"]
 
 
+@pytest.mark.parametrize("body", ["[]", "[  ]", "{}", "{  }"])
+def test_empty_tag_body_falls_through_as_sung_text(body: str) -> None:
+    # A bracket/brace pair with nothing (or only whitespace) inside is not a
+    # meaningful section/directive name; treat it consistently either way
+    # rather than letting the whitespace case produce a name of " ".
+    spec = parse_lyrics(body)
+    assert spec.section_names == [] and spec.directives == []
+    assert spec.sung_lines == [body]
+
+
+@pytest.mark.parametrize("width", [1_000, 4_000, 8_000])
+def test_unterminated_tag_with_whitespace_body_parses_quickly(width: int) -> None:
+    # Regression for catastrophic backtracking: a lazy body quantifier
+    # followed by a greedy `\s*` that accepts the same characters used to
+    # take ~24s at 4,000 spaces (unauthenticated, and well inside
+    # GenerationRequest.lyrics's own 8,000-char limit). Must stay near-instant.
+    start = time.monotonic()
+    parse_lyrics("[" + " " * width)
+    assert time.monotonic() - start < 1.0
+
+
+def test_syllable_key_normalizes_unicode_form() -> None:
+    # NFC and NFD encode the same visible word ("café") as different
+    # codepoint sequences; text from different sources (LLM output vs. some
+    # filesystem/editor paths) can arrive in either form.
+    nfc = unicodedata.normalize("NFC", "café")
+    nfd = unicodedata.normalize("NFD", "café")
+    assert nfc != nfd  # sanity check: genuinely different strings
+    assert syllable_key(nfc) == syllable_key(nfd)
+
+
 def test_sung_text_joins_lines() -> None:
     assert parse_lyrics("one two\nthree").sung_text == "one two three"
 
@@ -102,3 +137,27 @@ def test_request_exposes_parsed_lyrics() -> None:
 def test_request_without_lyrics_is_instrumental() -> None:
     request = GenerationRequest.model_validate({"prompt": "an instrumental"})
     assert not request.lyrics_spec.has_lyrics
+
+
+def test_punctuation_only_lyrics_are_rejected() -> None:
+    # "..." has sung_lines (so has_lyrics is True) but normalizes to an empty
+    # syllable_key, which would make Constraints.violations() reject any real
+    # sung output forever, exhausting retries on every generation attempt.
+    with pytest.raises(ValidationError, match="sung words"):
+        GenerationRequest.model_validate({"prompt": "a song", "lyrics": "..."})
+
+
+def test_too_many_lyric_sections_are_rejected() -> None:
+    # generation/contract.py caps a song at 64 sections; a lyrics field
+    # asking for more can never be satisfied by any valid compact output.
+    lyrics = "\n".join(f"[section {i}]\nwords" for i in range(65))
+    with pytest.raises(ValidationError, match="sections requested"):
+        GenerationRequest.model_validate({"prompt": "a song", "lyrics": lyrics})
+
+
+def test_overlong_lyric_section_name_is_rejected() -> None:
+    # CompactSection.n caps section names at 80 chars; a longer requested
+    # name can never be echoed back exactly by any valid compact output.
+    lyrics = f"[{'x' * 81}]\nwords"
+    with pytest.raises(ValidationError, match="too long"):
+        GenerationRequest.model_validate({"prompt": "a song", "lyrics": lyrics})

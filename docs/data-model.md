@@ -29,6 +29,8 @@ Comparison ignores *how* the model split syllables — casing, punctuation, hyph
 
 **Known ceiling:** a true call-and-response, where no single voice sings every line, trips the completeness check. The upgrade path is merging lyric events across vocal tracks by tick with same-tick dedup; not built until it is needed.
 
+**Known tradeoff:** normalizing away word-split noise (whitespace, hyphens, underscores) is *all-or-nothing* — it also erases the boundary between "space = new word" and "space = a sloppy mid-word split," so two different sentences that happen to share letters can compare equal (e.g. "an ice cream" and "a nice cream" both normalize to `anicecream`). This is accepted, not accidental: the normalization is required for the model to legally represent a syllable split like `lov` + `er` as one word. Tightening it would need a per-note signal (e.g. an explicit new-word marker) rather than a purely textual comparison; not built until the false-pass rate in practice justifies it.
+
 ## Sections
 
 Sections carry only a name and a start beat — a section ends where the next begins. Names are free text and repeats are expected (`chorus` appears several times), so sections are a **sequence, not a set**. They start at the top of the song and land on bar lines, because real arrangements change on the bar.
