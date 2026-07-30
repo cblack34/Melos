@@ -10,6 +10,7 @@ from melos.generation.llm import (
     generation_model_settings,
     is_cloud_model,
     lyric_model,
+    lyric_model_settings,
     meta_model,
     meta_model_settings,
     supports_native_output,
@@ -150,6 +151,36 @@ def test_native_output_disabled_for_cloud_tags() -> None:
 def test_native_output_enabled_for_local_ollama() -> None:
     config = LlmSettings(_env_file=None)
     assert supports_native_output(config.generation_model, config)
+
+
+def test_hosted_budgets_leave_room_for_reasoning_tokens() -> None:
+    # A reasoning model spends tokens thinking before it emits anything, and
+    # those count against max_tokens: gpt-5-nano burned a 1000-token meta
+    # budget entirely on reasoning ("token limit exceeded before any response
+    # was generated"). Hosted ceilings must be far larger than the output.
+    hosted = LlmSettings(
+        _env_file=None,
+        llm_provider="openrouter",
+        generation_model="anthropic/claude-sonnet-5",
+        meta_model="openai/gpt-5-nano",
+    )
+    local = LlmSettings(_env_file=None)
+    for hosted_settings, local_settings in (
+        (generation_model_settings(hosted), generation_model_settings(local)),
+        (meta_model_settings(hosted), meta_model_settings(local)),
+        (lyric_model_settings(hosted), lyric_model_settings(local)),
+    ):
+        hosted_cap = hosted_settings["max_tokens"]
+        local_cap = local_settings["max_tokens"]
+        assert hosted_cap > local_cap
+        assert hosted_cap >= 16_000
+
+
+def test_cloud_tags_get_the_hosted_budget() -> None:
+    # Ollama Cloud goes through the local daemon but runs remotely and keeps
+    # its default reasoning, so it needs the hosted headroom, not the local cap.
+    cloud = LlmSettings(_env_file=None, meta_model="gpt-oss:120b-cloud")
+    assert meta_model_settings(cloud)["max_tokens"] >= 16_000
 
 
 def test_reasoning_effort_disabled_for_local_only() -> None:
