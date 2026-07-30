@@ -18,6 +18,9 @@ services:
         - action: sync+restart
           path: ./backend/src
           target: /app/src
+        - action: sync+restart
+          path: ./backend/models.yaml
+          target: /app/models.yaml
         - action: rebuild
           path: ./backend/uv.lock
 

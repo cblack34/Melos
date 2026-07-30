@@ -3,6 +3,7 @@
 import re
 
 from fastapi import FastAPI, HTTPException, Response
+from pydantic import BaseModel
 from pydantic_ai.exceptions import (
     AgentRunError,
     ModelAPIError,
@@ -13,12 +14,12 @@ from pydantic_ai.exceptions import (
 from melos.config import LlmSettings
 from melos.domain.generator import GenerationRequest, SongGenerator
 from melos.generation.ai import PydanticAISongGenerator
+from melos.generation.catalog import ModelCatalog, load_catalog
 from melos.generation.llm import (
-    generation_model,
+    build_model,
+    catalog_lookup,
     generation_model_settings,
-    lyric_model,
     lyric_model_settings,
-    meta_model,
     meta_model_settings,
     supports_native_output,
 )
@@ -36,9 +37,43 @@ def default_lyric_writer(settings: LlmSettings | None = None) -> LyricWriter:
     """Build the configured lyric writer. Uses the per-task lyric model."""
     settings = settings if settings is not None else LlmSettings()
     return LyricWriter(
-        lyric_model(settings),
+        build_model(settings.lyric_model, settings),
         use_native_output=supports_native_output(settings.lyric_model, settings),
-        model_settings=lyric_model_settings(settings),
+        model_settings=lyric_model_settings(settings.lyric_model, settings),
+    )
+
+
+def ai_generator(
+    settings: LlmSettings,
+    catalog: ModelCatalog,
+    generation_model_id: str,
+    meta_model_id: str,
+) -> PydanticAISongGenerator:
+    """Build an AI generator for one (generation model, meta model) pair.
+
+    A model id present in ``catalog`` is built from its catalog entry
+    (provider, reasoning, budgets); anything else falls back to
+    ``llm.py``'s code-based heuristics keyed on ``settings.llm_provider``.
+    """
+    gen_entry, gen_provider = catalog_lookup("generation", generation_model_id, catalog)
+    meta_entry, meta_provider = catalog_lookup("meta", meta_model_id, catalog)
+    return PydanticAISongGenerator(
+        build_model(generation_model_id, settings, gen_provider),
+        MetaResolver(
+            build_model(meta_model_id, settings, meta_provider),
+            use_native_output=supports_native_output(
+                meta_model_id, settings, meta_entry, meta_provider
+            ),
+            model_settings=meta_model_settings(
+                meta_model_id, settings, meta_entry, meta_provider
+            ),
+        ),
+        use_native_output=supports_native_output(
+            generation_model_id, settings, gen_entry, gen_provider
+        ),
+        model_settings=generation_model_settings(
+            generation_model_id, settings, gen_entry, gen_provider
+        ),
     )
 
 
@@ -47,24 +82,34 @@ def default_generator(settings: LlmSettings | None = None) -> SongGenerator:
     settings = settings if settings is not None else LlmSettings()
     if settings.generation_backend == "stub":
         return StubSongGenerator()
-    return PydanticAISongGenerator(
-        generation_model(settings),
-        MetaResolver(
-            meta_model(settings),
-            use_native_output=supports_native_output(settings.meta_model, settings),
-            model_settings=meta_model_settings(settings),
-        ),
-        use_native_output=supports_native_output(settings.generation_model, settings),
-        model_settings=generation_model_settings(settings),
+    return ai_generator(
+        settings, load_catalog(), settings.generation_model, settings.meta_model
     )
+
+
+class ModelOption(BaseModel):
+    id: str
+    label: str
+
+
+class ModelOptions(BaseModel):
+    generation: list[ModelOption]
+    meta: list[ModelOption]
 
 
 def create_app(
     generator: SongGenerator | None = None,
     lyric_writer: LyricWriter | None = None,
+    settings: LlmSettings | None = None,
+    catalog: ModelCatalog | None = None,
 ) -> FastAPI:
     """Composition root: wires the AI collaborators; routes use them abstractly."""
-    song_generator = generator if generator is not None else default_generator()
+    settings = settings if settings is not None else LlmSettings()
+    # Named separately (not reassigned to `catalog`): route closures capture
+    # free variables by name, and a type checker cannot assume a captured
+    # name keeps its narrowed (non-None) type across the closure boundary.
+    resolved_catalog = catalog if catalog is not None else load_catalog()
+    song_generator = generator if generator is not None else default_generator(settings)
     app = FastAPI(title="Melos")
 
     def _writer() -> LyricWriter:
@@ -72,8 +117,21 @@ def create_app(
         # constructs a provider client it will not call.
         nonlocal lyric_writer
         if lyric_writer is None:
-            lyric_writer = default_lyric_writer()
+            lyric_writer = default_lyric_writer(settings)
         return lyric_writer
+
+    @app.get("/api/models")
+    async def list_models() -> ModelOptions:
+        return ModelOptions(
+            generation=[
+                ModelOption(id=e.id, label=e.label)
+                for e in resolved_catalog.models.get("generation", [])
+            ],
+            meta=[
+                ModelOption(id=e.id, label=e.label)
+                for e in resolved_catalog.models.get("meta", [])
+            ],
+        )
 
     @app.post("/api/lyrics")
     async def write_lyrics(request: LyricRequest) -> WrittenLyrics:
@@ -97,8 +155,42 @@ def create_app(
 
     @app.post("/api/generate", response_class=Response)
     async def generate(request: GenerationRequest) -> Response:
+        # An explicit per-request model choice wins even in stub mode --
+        # picking a model in the UI is an unambiguous request for AI
+        # generation. Unknown ids 422 rather than silently falling back,
+        # since a typo'd model id should not quietly become the default. Only
+        # the ids the client actually sent are checked against the catalog --
+        # the server's own configured default is trusted either way, so
+        # overriding one task never fails validation because the *other*
+        # task's untouched default happens not to be catalogued.
+        overridden = bool(request.generation_model or request.meta_model)
+        gen_id = request.generation_model or settings.generation_model
+        meta_id = request.meta_model or settings.meta_model
+        unknown = [
+            model_id
+            for task, model_id in (
+                ("generation", request.generation_model),
+                ("meta", request.meta_model),
+            )
+            if model_id is not None
+            and resolved_catalog.models.get(task)
+            and resolved_catalog.find(task, model_id) is None
+        ]
+        if unknown:
+            raise HTTPException(
+                status_code=422,
+                detail=f"unknown model id(s) not in the catalog: {unknown}",
+            )
         try:
-            song = await song_generator.generate(request)
+            # ai_generator() itself can raise UserError (e.g. a missing API
+            # key for the chosen provider), so it has to be inside this try —
+            # not built before it, where that error would bypass the handler.
+            generator_for_request = (
+                ai_generator(settings, resolved_catalog, gen_id, meta_id)
+                if overridden
+                else song_generator
+            )
+            song = await generator_for_request.generate(request)
         except AgentRunError as error:
             raise _llm_unavailable(error) from error
         except UserError as error:

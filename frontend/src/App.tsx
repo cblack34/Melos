@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { buildGenerationRequest, errorMessageFrom, filenameFrom } from './api'
 import LyricsField from './LyricsField'
+import ModelPicker from './ModelPicker'
 import './App.css'
 
 const KEYS = [
@@ -25,6 +26,8 @@ export default function App() {
   const [songKey, setSongKey] = useState('')
   const [timeSignature, setTimeSignature] = useState('')
   const [lyrics, setLyrics] = useState('')
+  const [generationModel, setGenerationModel] = useState('')
+  const [metaModel, setMetaModel] = useState('')
   const [busy, setBusy] = useState(false)
   const [lyricsBusy, setLyricsBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -40,6 +43,8 @@ export default function App() {
         key: songKey,
         timeSignature,
         lyrics,
+        generationModel,
+        metaModel,
       })
       const response = await fetch('/api/generate', {
         method: 'POST',
@@ -126,6 +131,12 @@ export default function App() {
           lyrics={lyrics}
           onChange={setLyrics}
           onBusyChange={setLyricsBusy}
+        />
+        <ModelPicker
+          generationModel={generationModel}
+          metaModel={metaModel}
+          onGenerationModelChange={setGenerationModel}
+          onMetaModelChange={setMetaModel}
         />
         <button type="submit" disabled={busy || lyricsBusy || !prompt.trim()}>
           {busy ? 'Generating…' : 'Generate MIDI'}

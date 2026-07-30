@@ -13,6 +13,7 @@ dependencies = [
     "pydantic>=2.13",
     "pydantic-ai-slim[openai,openrouter]>=2.20.0",
     "pydantic-settings>=2.14.2",
+    "pyyaml>=6.0.3",
     "uvicorn>=0.51.0",
 ]
 
@@ -26,6 +27,7 @@ dev = [
     "pytest>=9.1.1",
     "ruff>=0.16.0",
     "ty>=0.0.64",
+    "types-pyyaml>=6.0.12.20260724",
 ]
 
 [tool.ruff.lint]
