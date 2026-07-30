@@ -206,3 +206,32 @@ def test_reasoning_effort_disabled_for_local_only() -> None:
     }
     assert "extra_body" not in generation_model_settings(cloud)
     assert "extra_body" not in meta_model_settings(cloud)
+
+
+def test_deepseek_on_openrouter_disables_reasoning() -> None:
+    # DeepSeek's thinking mode 400s on pydantic-ai's forced tool_choice
+    # ("Thinking mode does not support this tool_choice") — verified live.
+    # OpenRouter's reasoning:{"enabled": false} sidesteps it.
+    config = LlmSettings(
+        _env_file=None,
+        llm_provider="openrouter",
+        generation_model="deepseek/deepseek-v4-flash",
+        meta_model="openai/gpt-5-nano",
+    )
+    assert generation_model_settings(config)["extra_body"] == {
+        "reasoning": {"enabled": False}
+    }
+
+
+def test_non_deepseek_openrouter_models_keep_default_reasoning() -> None:
+    # Claude and GPT-5-family models were tested with the same forced
+    # tool_choice and have no such conflict — this is a per-model fix, not a
+    # blanket reasoning-off policy that would cost quality elsewhere.
+    config = LlmSettings(
+        _env_file=None,
+        llm_provider="openrouter",
+        generation_model="anthropic/claude-sonnet-5",
+        meta_model="openai/gpt-5-nano",
+    )
+    assert "extra_body" not in generation_model_settings(config)
+    assert "extra_body" not in meta_model_settings(config)
