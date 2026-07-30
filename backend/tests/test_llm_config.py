@@ -56,6 +56,23 @@ def test_per_task_models_selected_by_env(monkeypatch: pytest.MonkeyPatch) -> Non
     assert lyric.model_name == "anthropic/claude-opus-5"
 
 
+def test_lyric_model_defaults_to_the_generation_model() -> None:
+    # Blank means "same model that composes the song", so adding this per-task
+    # model does not invalidate a .env written before it existed.
+    config = LlmSettings(_env_file=None, generation_model="qwen3.6:35b")
+    assert config.lyric_model == "qwen3.6:35b"
+
+
+def test_lyric_model_default_follows_an_openrouter_generation_model() -> None:
+    config = LlmSettings(
+        _env_file=None,
+        llm_provider="openrouter",
+        generation_model="anthropic/claude-sonnet-5",
+        meta_model="openai/gpt-5-nano",
+    )
+    assert config.lyric_model == "anthropic/claude-sonnet-5"
+
+
 def test_openrouter_rejects_a_bare_lyric_model_id() -> None:
     # Every per-task model must be a provider/model id on OpenRouter, not just
     # the two that existed before lyric writing.
