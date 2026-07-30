@@ -1,0 +1,65 @@
+.melos {
+  max-width: 40rem;
+  margin: 4rem auto;
+  padding: 0 1rem;
+  text-align: left;
+}
+
+.melos h1 {
+  font-size: 2rem;
+  margin: 0 0 0.5rem;
+}
+
+.melos form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.melos label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-weight: 600;
+}
+
+.melos textarea,
+.melos input,
+.melos select {
+  font: inherit;
+  font-weight: 400;
+  padding: 0.5rem;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 0.375rem;
+  background: inherit;
+  color: inherit;
+}
+
+.melos .constraints {
+  display: flex;
+  gap: 1rem;
+}
+
+.melos .constraints label {
+  flex: 1;
+}
+
+.melos button {
+  font: inherit;
+  font-weight: 600;
+  padding: 0.6rem 1rem;
+  border: none;
+  border-radius: 0.375rem;
+  background: var(--accent, #646cff);
+  color: #fff;
+  cursor: pointer;
+}
+
+.melos button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.melos .error {
+  color: #c0392b;
+}

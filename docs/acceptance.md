@@ -4,14 +4,12 @@ The build is done when the run commands work and every box below holds. Verify b
 
 ## Setup & run
 
-Exact commands are finalized during the first scaffold/CI story. Expected shape:
-
 ```bash
 # Setup
-uv sync
-npm ci
+(cd backend && uv sync)
+(cd frontend && npm ci)
 
-# App (docker-compose or equivalent once present)
+# App — UI at http://localhost:5173, API at http://localhost:8000
 docker compose up --build
 ```
 

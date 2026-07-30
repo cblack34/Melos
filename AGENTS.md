@@ -19,17 +19,19 @@ You may create spine/integration branches per milestone and squash-merge into th
 This block is canonical — other docs link here rather than restating it.
 
 ```bash
-# Exact scripts are finalized in the first CI/scaffold story.
-# Expected shape (adjust to real scripts once they exist):
+# backend — run from backend/
 uv run ruff check .
+uv run ruff format --check .
 uv run ty check
 uv run pytest
-# frontend (typecheck = tsc --noEmit):
+# frontend — run from frontend/ (typecheck = tsc -b --noEmit)
 npm run lint
 npm run typecheck
 npm run build
 # PR review must come back clean
 ```
+
+CI (`.github/workflows/ci.yml`) runs the same commands on every PR.
 
 All must pass before you merge.
 
