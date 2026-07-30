@@ -38,7 +38,7 @@ Budget fallback for prod generation: `deepseek/deepseek-v4-pro` (~10× cheaper, 
 Structured-output notes (verified against vendor docs):
 
 - Local Ollama (≥0.5) enforces json_schema via grammar-constrained decoding → use Pydantic AI `NativeOutput`. Ollama **Cloud** does not enforce it. OpenRouter enforcement is per endpoint → `ToolOutput` (default) for portability, `provider: {require_parameters: true}` to route to enforcing endpoints.
-- Ollama truncation risk is context fill, not output cap (`num_predict` defaults to −1): set context explicitly for long songs via `ModelSettings(extra_body={"context_length": N})`.
+- Ollama truncation risk is context fill, not output cap (`num_predict` defaults to −1). There is no per-request way to raise the context window through Ollama's OpenAI-compatible endpoint (confirmed against Ollama's own docs, `docs/api/openai-compatibility.mdx`: the only supported mechanism is a custom Modelfile with `PARAMETER num_ctx <N>`, or the server-wide `OLLAMA_CONTEXT_LENGTH` env var) — `ModelSettings(extra_body=...)` is silently ignored by Ollama's compat layer, not a working override.
 - All local picks are Apache-2.0 (license gate); `pydantic-ai-slim[openai,openrouter]` is MIT (openai extra covers Ollama). Its `openai` extra transitively pulls in `certifi` and `tqdm` (both MPL-2.0, weak/file-level copyleft) — accepted as unavoidable given the OpenAI-SDK-based transport, and low-risk since Melos uses both unmodified.
 
 ## Dependency rules
