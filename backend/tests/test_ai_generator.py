@@ -108,6 +108,39 @@ async def test_persistent_violation_exhausts_retries() -> None:
 
 
 @pytest.mark.anyio
+async def test_retry_exhaustion_names_the_failing_constraint() -> None:
+    # "Exceeded maximum output retries (3)" alone is unactionable: it says
+    # nothing about which constraint the model kept missing, so a user report
+    # of it cannot be diagnosed without re-running by hand.
+    wrong_tempo: dict[str, object] = {**GOOD_COMPACT, "bpm": 120.0}
+    with pytest.raises(UnexpectedModelBehavior, match="bpm must be exactly 97"):
+        await generate(generator_returning([wrong_tempo]))
+
+
+@pytest.mark.anyio
+async def test_retry_exhaustion_reports_domain_validation_failures_too() -> None:
+    # Domain errors (raised by to_song inside the validator) must surface the
+    # same way as constraint violations, not vanish behind the generic message.
+    overlapping: dict[str, object] = {
+        **GOOD_COMPACT,
+        "tracks": [
+            {
+                "name": "Lead",
+                "prog": 53,
+                "voc": True,
+                "notes": [
+                    {"s": 0, "d": 2, "p": 62, "lyr": "La"},
+                    {"s": 1, "d": 1, "p": 64, "lyr": " la"},  # overlaps
+                ],
+            },
+            *GOOD_TRACKS,
+        ],
+    }
+    with pytest.raises(UnexpectedModelBehavior, match="not monophonic"):
+        await generate(generator_returning([overlapping]))
+
+
+@pytest.mark.anyio
 async def test_included_sound_effect_is_allowed() -> None:
     request = GenerationRequest.model_validate(
         {**REQUEST, "include_instruments": ["Gunshot"], "exclude_instruments": []}

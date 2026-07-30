@@ -10,8 +10,9 @@ validator that sends precise violations back to the model as retries
 import difflib
 from typing import Self
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from pydantic_ai import Agent, ModelRetry, NativeOutput, RunContext
+from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.models import Model
 from pydantic_ai.settings import ModelSettings
 
@@ -80,6 +81,11 @@ class Constraints(BaseModel):
     forbid_percussion: bool
     allow_sound_effects: bool
     lyrics: LyricsSpec
+    # Why the last attempt was rejected. A Constraints is built per request, so
+    # this is per-run scratch space, and it is the only record of *which*
+    # constraint the model kept missing once retries run out — pydantic-ai's
+    # UnexpectedModelBehavior says only "exceeded maximum output retries".
+    last_rejection: list[str] = Field(default_factory=list)
 
     @classmethod
     def from_request(cls, request: GenerationRequest, meta: ResolvedMeta) -> Self:
@@ -239,6 +245,7 @@ class PydanticAISongGenerator:
         ) -> CompactSong:
             problems = ctx.deps.violations(compact)
             if problems:
+                ctx.deps.last_rejection = problems
                 raise ModelRetry(
                     "Regenerate the complete song fixing these violations:\n- "
                     + "\n- ".join(problems)
@@ -246,17 +253,31 @@ class PydanticAISongGenerator:
             try:
                 to_song(compact, allow_sound_effects=ctx.deps.allow_sound_effects)
             except ValidationError as error:
+                ctx.deps.last_rejection = [
+                    f"{err['loc']}: {err['msg']}" for err in error.errors()
+                ]
                 raise ModelRetry(
                     f"Regenerate the complete song; it failed validation:\n{error}"
                 ) from error
+            ctx.deps.last_rejection = []
             return compact
 
     async def generate(self, request: GenerationRequest) -> Song:
         meta = await self._meta_resolver.resolve(request)
         constraints = Constraints.from_request(request, meta)
-        result = await self._agent.run(
-            _user_message(request, constraints), deps=constraints
-        )
+        try:
+            result = await self._agent.run(
+                _user_message(request, constraints), deps=constraints
+            )
+        except UnexpectedModelBehavior as error:
+            # Say what the model kept getting wrong. Without this the user sees
+            # only "exceeded maximum output retries", which is unactionable —
+            # for them and for anyone debugging a report of it.
+            if constraints.last_rejection:
+                raise UnexpectedModelBehavior(
+                    f"{error} Last rejection: " + "; ".join(constraints.last_rejection)
+                ) from error
+            raise
         return to_song(
             result.output, allow_sound_effects=constraints.allow_sound_effects
         )
