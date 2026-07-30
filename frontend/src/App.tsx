@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
-import { buildGenerationRequest, filenameFrom } from './api'
+import { buildGenerationRequest, errorMessageFrom, filenameFrom } from './api'
+import LyricsField from './LyricsField'
 import './App.css'
 
 const KEYS = [
@@ -23,6 +24,7 @@ export default function App() {
   const [tempo, setTempo] = useState('')
   const [songKey, setSongKey] = useState('')
   const [timeSignature, setTimeSignature] = useState('')
+  const [lyrics, setLyrics] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -31,7 +33,13 @@ export default function App() {
     setBusy(true)
     setError(null)
     try {
-      const body = buildGenerationRequest({ prompt, tempo, key: songKey, timeSignature })
+      const body = buildGenerationRequest({
+        prompt,
+        tempo,
+        key: songKey,
+        timeSignature,
+        lyrics,
+      })
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -48,12 +56,7 @@ export default function App() {
       })
       if (!response.ok) {
         const responseBody = await response.json().catch(() => null)
-        const detail = Array.isArray(responseBody?.detail)
-          ? responseBody.detail.map((d: { msg: string }) => d.msg).join('; ')
-          : typeof responseBody?.detail === 'string'
-            ? responseBody.detail
-            : undefined
-        throw new Error(detail ?? `Generation failed (HTTP ${response.status})`)
+        throw new Error(errorMessageFrom(response.status, responseBody))
       }
       download(await response.blob(), filenameFrom(response))
     } catch (err) {
@@ -117,6 +120,7 @@ export default function App() {
             </select>
           </label>
         </div>
+        <LyricsField prompt={prompt} lyrics={lyrics} onChange={setLyrics} />
         <button type="submit" disabled={busy || !prompt.trim()}>
           {busy ? 'Generating…' : 'Generate MIDI'}
         </button>
