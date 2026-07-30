@@ -15,7 +15,7 @@ from melos.config import LlmSettings
 
 def is_cloud_model(model_name: str) -> bool:
     """Ollama Cloud tags (``glm-5.2:cloud``, ``gpt-oss:120b-cloud``, ...)."""
-    return model_name.endswith((":cloud", "-cloud"))
+    return model_name.lower().endswith((":cloud", "-cloud"))
 
 
 def supports_native_output(model_name: str, settings: LlmSettings) -> bool:

@@ -157,16 +157,16 @@ async def main() -> int:
         started = time.monotonic()
         try:
             song = await generator.generate(request)
+            data = export_song(song)
+            (args.out / f"{name}.mid").write_bytes(data)
+            problems = check_case(request, data)
         except Exception as error:  # report and continue: a run surveys all cases
             print(
-                f"FAIL {name}: generation error after "
+                f"FAIL {name}: error after "
                 f"{time.monotonic() - started:.0f}s: {error}"
             )
             failed += 1
             continue
-        data = export_song(song)
-        (args.out / f"{name}.mid").write_bytes(data)
-        problems = check_case(request, data)
         elapsed = time.monotonic() - started
         notes = sum(len(track.notes) for track in song.tracks)
         stats = f"{elapsed:.0f}s, {len(song.tracks)} tracks, {notes} notes"

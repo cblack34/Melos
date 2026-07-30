@@ -4,7 +4,14 @@ from pydantic_ai.models.ollama import OllamaModel
 from pydantic_ai.models.openrouter import OpenRouterModel
 
 from melos.config import LlmSettings
-from melos.generation.llm import generation_model, meta_model
+from melos.generation.llm import (
+    generation_model,
+    generation_model_settings,
+    is_cloud_model,
+    meta_model,
+    meta_model_settings,
+    supports_native_output,
+)
 
 # _env_file=None keeps developer .env files out of unit tests
 
@@ -69,3 +76,38 @@ def test_openrouter_without_api_key_raises(monkeypatch: pytest.MonkeyPatch) -> N
     )
     with pytest.raises(UserError):
         generation_model(config)
+
+
+def test_cloud_tags_detected() -> None:
+    assert is_cloud_model("gpt-oss:120b-cloud")
+    assert is_cloud_model("glm-5.2:cloud")
+    assert not is_cloud_model("qwen3.6:27b")
+
+
+def test_cloud_tags_detected_case_insensitively() -> None:
+    assert is_cloud_model("gpt-oss:120b-CLOUD")
+    assert is_cloud_model("GPT-OSS:120b-cloud")
+
+
+def test_native_output_disabled_for_cloud_tags() -> None:
+    config = LlmSettings(_env_file=None, generation_model="gpt-oss:120b-cloud")
+    assert not supports_native_output(config.generation_model, config)
+
+
+def test_native_output_enabled_for_local_ollama() -> None:
+    config = LlmSettings(_env_file=None)
+    assert supports_native_output(config.generation_model, config)
+
+
+def test_reasoning_effort_disabled_for_local_only() -> None:
+    local = LlmSettings(_env_file=None)
+    cloud = LlmSettings(
+        _env_file=None,
+        generation_model="gpt-oss:120b-cloud",
+        meta_model="gpt-oss:120b-cloud",
+    )
+    assert generation_model_settings(local).get("extra_body") == {
+        "reasoning_effort": "none"
+    }
+    assert "extra_body" not in generation_model_settings(cloud)
+    assert "extra_body" not in meta_model_settings(cloud)
