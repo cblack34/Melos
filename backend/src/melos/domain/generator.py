@@ -19,7 +19,7 @@ class GenerationRequest(BaseModel):
     # silently dropped, per non-negotiable #4 ("meta values are hard constraints").
     model_config = ConfigDict(extra="forbid")
 
-    prompt: str = Field(min_length=1)
+    prompt: str = Field(min_length=1, max_length=4000)
     tempo_bpm: float | None = Field(default=None, ge=20, le=400)
     key: KeyName | None = None
     time_signature: TimeSignature | None = None
@@ -52,11 +52,19 @@ class GenerationRequest(BaseModel):
 
     @model_validator(mode="after")
     def _include_exclude_disjoint(self) -> Self:
-        included = {name.strip().lower() for name in self.include_instruments}
-        excluded = {name.strip().lower() for name in self.exclude_instruments}
-        overlap = included & excluded
+        # is_percussion_name() treats "drums"/"drum kit"/"percussion" as the
+        # same pseudo-instrument (domain/gm.py); canonicalize on that key so
+        # e.g. include=["Drums"], exclude=["percussion"] is caught as an
+        # overlap rather than sailing through as two different raw strings.
+        def _key(name: str) -> str:
+            return "percussion" if is_percussion_name(name) else name.strip().lower()
+
+        included = {_key(name): name for name in self.include_instruments}
+        excluded = {_key(name): name for name in self.exclude_instruments}
+        overlap = included.keys() & excluded.keys()
         if overlap:
-            raise ValueError(f"instruments both included and excluded: {overlap}")
+            names = {included[key] for key in overlap}
+            raise ValueError(f"instruments both included and excluded: {names}")
         return self
 
 

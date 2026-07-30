@@ -63,14 +63,23 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-        // Real AI generation on a local model can take minutes.
-        signal: AbortSignal.timeout(900_000),
+        // Real AI generation on a local model can take minutes. The backend's
+        // meta-resolution + generation calls run sequentially in one request
+        // and can together approach ~25 min worst case (meta resolution falls
+        // back to the openai SDK's 600s client default timeout since it sets
+        // no explicit one, generation explicitly sets timeout=900 in
+        // generation/llm.py), so give real margin over the server's own
+        // timeouts rather than aborting a request the server would have
+        // completed.
+        signal: AbortSignal.timeout(1_800_000),
       })
       if (!response.ok) {
         const responseBody = await response.json().catch(() => null)
         const detail = Array.isArray(responseBody?.detail)
           ? responseBody.detail.map((d: { msg: string }) => d.msg).join('; ')
-          : undefined
+          : typeof responseBody?.detail === 'string'
+            ? responseBody.detail
+            : undefined
         throw new Error(detail ?? `Generation failed (HTTP ${response.status})`)
       }
       download(await response.blob(), filenameFrom(response))

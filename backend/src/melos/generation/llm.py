@@ -13,6 +13,16 @@ from pydantic_ai.settings import ModelSettings
 from melos.config import LlmSettings
 
 
+def supports_native_output(settings: LlmSettings) -> bool:
+    """Whether the configured provider enforces json_schema natively.
+
+    Ollama (local) enforces json_schema via grammar-constrained decoding, so
+    ``NativeOutput`` is used there; everywhere else ``ToolOutput`` (the
+    pydantic-ai default) is the portable choice (docs/tech-stack.md).
+    """
+    return settings.llm_provider == "ollama"
+
+
 def build_model(model_name: str, settings: LlmSettings) -> Model:
     if settings.llm_provider == "ollama":
         return OllamaModel(
@@ -34,11 +44,13 @@ def generation_model_settings(settings: LlmSettings) -> ModelSettings:
     """Long-output settings for the song-generation call.
 
     A full song is thousands of output tokens; local models are slow, so the
-    timeout is generous. For Ollama the context window must be raised
-    explicitly — truncation there comes from context fill, not an output cap
-    (docs/tech-stack.md).
+    timeout is generous. Ollama's OpenAI-compatible endpoint has no per-request
+    way to raise the context window — confirmed against Ollama's own docs
+    (`docs/api/openai-compatibility.mdx` on ollama/ollama): "The OpenAI API
+    does not have a way of setting the context size for a model. If you need
+    to change the context size, create a `Modelfile`... `PARAMETER num_ctx
+    <context size>`." So truncation risk from context fill remains for long
+    songs on Ollama unless the configured model's Modelfile (or
+    `OLLAMA_CONTEXT_LENGTH`) already sets a large context (docs/tech-stack.md).
     """
-    model_settings = ModelSettings(max_tokens=32_000, timeout=900)
-    if settings.llm_provider == "ollama":
-        model_settings["extra_body"] = {"context_length": 32_768}
-    return model_settings
+    return ModelSettings(max_tokens=32_000, timeout=900)

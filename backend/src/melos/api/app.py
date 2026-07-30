@@ -3,12 +3,17 @@
 import re
 
 from fastapi import FastAPI, HTTPException, Response
-from pydantic_ai.exceptions import ModelAPIError, UnexpectedModelBehavior
+from pydantic_ai.exceptions import AgentRunError, ModelAPIError, UnexpectedModelBehavior
 
 from melos.config import LlmSettings
 from melos.domain.generator import GenerationRequest, SongGenerator
 from melos.generation.ai import PydanticAISongGenerator
-from melos.generation.llm import generation_model, generation_model_settings, meta_model
+from melos.generation.llm import (
+    generation_model,
+    generation_model_settings,
+    meta_model,
+    supports_native_output,
+)
 from melos.generation.meta import MetaResolver
 from melos.generation.stub import StubSongGenerator
 from melos.midi.exporter import export_song
@@ -19,7 +24,7 @@ def default_generator(settings: LlmSettings | None = None) -> SongGenerator:
     settings = settings if settings is not None else LlmSettings()
     if settings.generation_backend == "stub":
         return StubSongGenerator()
-    native = settings.llm_provider == "ollama"  # grammar-enforced json_schema
+    native = supports_native_output(settings)
     return PydanticAISongGenerator(
         generation_model(settings),
         MetaResolver(meta_model(settings), use_native_output=native),
@@ -46,11 +51,26 @@ def create_app(generator: SongGenerator | None = None) -> FastAPI:
             raise HTTPException(
                 status_code=502, detail=f"LLM provider error: {error}"
             ) from error
-        # export_song is CPU-bound but sub-ms for realistic songs (benchmarked
-        # ~54ms for an intentionally oversized 8-track/10-min arrangement);
-        # revisit with asyncio.to_thread if profiling ever shows otherwise.
+        except AgentRunError as error:
+            # Catch-all for the rest of the AgentRunError hierarchy (e.g.
+            # UsageLimitExceeded) — a sibling of, not a superclass of, the two
+            # exceptions above.
+            raise HTTPException(
+                status_code=502, detail=f"agent run failed: {error}"
+            ) from error
+        try:
+            # export_song is CPU-bound but sub-ms for realistic songs (benchmarked
+            # ~54ms for an intentionally oversized 8-track/10-min arrangement);
+            # revisit with asyncio.to_thread if profiling ever shows otherwise.
+            content = export_song(song)
+        except ValueError as error:
+            # e.g. an LLM-generated title/name/lyric outside the MIDI file's
+            # Latin-1 charset that the exporter's folding couldn't fix.
+            raise HTTPException(
+                status_code=502, detail=f"song could not be exported: {error}"
+            ) from error
         return Response(
-            content=export_song(song),
+            content=content,
             media_type="audio/midi",
             headers={
                 "Content-Disposition": f'attachment; filename="{_filename(song.title)}"'

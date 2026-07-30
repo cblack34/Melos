@@ -7,7 +7,7 @@ hard-constraint plumbing stays real even without an LLM.
 
 from melos.domain.generator import GenerationRequest
 from melos.domain.gm import GM_PROGRAM_NAMES, is_percussion_name, program_for_name
-from melos.domain.models import Note, Song, TimeSignature, Track
+from melos.domain.models import SOUND_EFFECT_PROGRAMS, Note, Song, TimeSignature, Track
 
 _LYRIC_SYLLABLES = ["Me", "los", "sings", "a", "lit", "tle", "song", "now"]
 _MELODY_PITCHES = [60, 62, 64, 65, 67, 65, 64, 60]  # C major run
@@ -34,12 +34,14 @@ class StubSongGenerator:
         bass_program = _first_allowed(
             _DEFAULT_BASS_PROGRAM, excluded | {melody_program}
         )
-        tracks.append(_bass("Bass", bass_program))
+        tracks.append(_riff("Bass", bass_program))
         if not drums_excluded:
             tracks.append(_drums())
 
-        # Every must-include instrument gets its own track (non-negotiable #4).
-        used = {track.program for track in tracks if not track.is_percussion}
+        # Every must-include instrument gets its own, correctly named track
+        # (non-negotiable #4) — even if its program collides with a default
+        # melody/bass program, in which case the existing track is renamed
+        # rather than skipped.
         for name in request.include_instruments:
             if is_percussion_name(name):
                 if drums_excluded:
@@ -48,9 +50,16 @@ class StubSongGenerator:
                     tracks.append(_drums())
                 continue
             program = program_for_name(name)
-            if program is not None and program not in used:
-                tracks.append(_bass(GM_PROGRAM_NAMES[program], program))
-                used.add(program)
+            if program is None:
+                continue
+            existing = next(
+                (t for t in tracks if t.program == program and not t.is_percussion),
+                None,
+            )
+            if existing is not None:
+                existing.name = GM_PROGRAM_NAMES[program]
+            else:
+                tracks.append(_riff(GM_PROGRAM_NAMES[program], program))
 
         return Song(
             # ponytail: prompt text stays out of the title until the exporter's
@@ -61,6 +70,11 @@ class StubSongGenerator:
             time_signature=request.time_signature
             or TimeSignature(numerator=4, denominator=4),
             tracks=tracks,
+            allow_sound_effects=any(
+                program_for_name(name) in SOUND_EFFECT_PROGRAMS
+                for name in request.include_instruments
+                if not is_percussion_name(name)
+            ),
         )
 
 
@@ -83,7 +97,7 @@ def _melody(program: int) -> Track:
     )
 
 
-def _bass(name: str, program: int) -> Track:
+def _riff(name: str, program: int) -> Track:
     return Track(
         name=name,
         program=program,

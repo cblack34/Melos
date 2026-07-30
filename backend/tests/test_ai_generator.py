@@ -135,3 +135,57 @@ async def test_user_message_states_all_hard_constraints() -> None:
     assert "ts = 3/4" in message
     assert "required instrument track: Flute (prog=73)" in message
     assert "forbidden program: 56 (Trumpet)" in message
+
+
+@pytest.mark.anyio
+async def test_forbidden_percussion_is_retried_until_removed() -> None:
+    """Constraints.violations()'s forbid_percussion branch: a response with
+    a percussion track must be rejected and retried when the request
+    excludes drums."""
+    request = GenerationRequest.model_validate(
+        {**REQUEST, "include_instruments": [], "exclude_instruments": ["drums"]}
+    )
+    with_drums: dict[str, object] = {
+        **GOOD_COMPACT,
+        "tracks": [
+            *GOOD_TRACKS,
+            {
+                "name": "Drums",
+                "prog": 0,
+                "perc": True,
+                "notes": [{"s": 0, "d": 1, "p": 36}],
+            },
+        ],
+    }
+    generator = generator_returning([with_drums, GOOD_COMPACT])
+    song = await generator.generate(request)
+    assert not any(track.is_percussion for track in song.tracks)
+
+
+@pytest.mark.anyio
+async def test_required_percussion_is_retried_until_present() -> None:
+    """Constraints.violations()'s require_percussion branch: a response with
+    no percussion track must be rejected and retried when the request
+    requires drums."""
+    request = GenerationRequest.model_validate(
+        {
+            **REQUEST,
+            "include_instruments": ["Flute", "drums"],
+            "exclude_instruments": [],
+        }
+    )
+    with_drums: dict[str, object] = {
+        **GOOD_COMPACT,
+        "tracks": [
+            *GOOD_TRACKS,
+            {
+                "name": "Drums",
+                "prog": 0,
+                "perc": True,
+                "notes": [{"s": 0, "d": 1, "p": 36}],
+            },
+        ],
+    }
+    generator = generator_returning([GOOD_COMPACT, with_drums])
+    song = await generator.generate(request)
+    assert any(track.is_percussion for track in song.tracks)
