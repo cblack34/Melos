@@ -29,7 +29,7 @@ from melos.domain.progress import (
 from melos.generation.contract import CompactSong, CompactTrack, to_song
 from melos.generation.meta import MetaResolver, ResolvedMeta
 
-# Shared with progress events (attempt / max_attempts on validation_retry).
+# pydantic-ai output retry budget (retries={"output": N} ⇒ N+1 total attempts).
 _OUTPUT_RETRIES = 3
 
 _INSTRUCTIONS = (
@@ -282,9 +282,13 @@ class PydanticAISongGenerator:
                 await report_progress(
                     ProgressEvent(
                         phase="validation_retry",
-                        message="Constraint check failed; regenerating",
+                        message=(
+                            "Constraint check failed; last attempt"
+                            if ctx.last_attempt
+                            else "Constraint check failed; regenerating"
+                        ),
                         attempt=ctx.retry + 1,
-                        max_attempts=_OUTPUT_RETRIES,
+                        max_attempts=ctx.max_retries + 1,
                         reasons=list(problems),
                     )
                 )
@@ -304,9 +308,13 @@ class PydanticAISongGenerator:
                 await report_progress(
                     ProgressEvent(
                         phase="validation_retry",
-                        message="Domain validation failed; regenerating",
+                        message=(
+                            "Domain validation failed; last attempt"
+                            if ctx.last_attempt
+                            else "Domain validation failed; regenerating"
+                        ),
                         attempt=ctx.retry + 1,
-                        max_attempts=_OUTPUT_RETRIES,
+                        max_attempts=ctx.max_retries + 1,
                         reasons=reasons,
                     )
                 )

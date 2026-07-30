@@ -147,7 +147,8 @@ async def test_constraint_retry_emits_validation_retry_with_reason() -> None:
     ]
     retry = next(e for e in reporter.events if e.phase == "validation_retry")
     assert retry.attempt == 1
-    assert retry.max_attempts == 3
+    # retries={"output": 3} ⇒ 4 total attempts (initial + 3 retries)
+    assert retry.max_attempts == 4
     assert any("bpm" in reason for reason in retry.reasons)
 
 
@@ -162,7 +163,17 @@ async def test_exhausted_retries_end_with_failed_event() -> None:
         )
     assert reporter.events[0].phase == "request_received"
     assert reporter.events[-1].phase == "failed"
-    assert any(e.phase == "validation_retry" for e in reporter.events)
+    retries = [e for e in reporter.events if e.phase == "validation_retry"]
+    assert [e.attempt for e in retries] == [1, 2, 3, 4]
+    assert all(e.max_attempts == 4 for e in retries)
+    assert all(
+        e.attempt is not None
+        and e.max_attempts is not None
+        and e.attempt <= e.max_attempts
+        for e in retries
+    )
+    assert retries[-1].message is not None
+    assert "last attempt" in retries[-1].message
     assert reporter.events[-1].message
 
 
@@ -195,9 +206,23 @@ def test_progress_event_is_json_serializable_for_future_sse() -> None:
         phase="validation_retry",
         message="Constraint check failed; regenerating",
         attempt=1,
-        max_attempts=3,
+        max_attempts=4,
         reasons=["bpm must be exactly 97"],
     )
     payload = event.model_dump(mode="json")
     assert payload["phase"] == "validation_retry"
     assert payload["reasons"] == ["bpm must be exactly 97"]
+
+
+@pytest.mark.anyio
+async def test_progress_sink_errors_do_not_abort_generation() -> None:
+    class FlakyReporter:
+        async def report(self, event: ProgressEvent) -> None:
+            if event.phase == "generation_started":
+                raise RuntimeError("sink exploded")
+
+    song = await _generator([GOOD_COMPACT]).generate(
+        GenerationRequest.model_validate(FULL_META_REQUEST),
+        progress=FlakyReporter(),
+    )
+    assert song.tempo_bpm == 97

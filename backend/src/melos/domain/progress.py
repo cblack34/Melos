@@ -32,10 +32,11 @@ class ProgressEvent(BaseModel):
 
     phase: ProgressPhase
     message: str | None = None
-    # validation_retry: 1-based attempt that was rejected, and configured max
-    # output retries (pydantic-ai ``retries={"output": N}``).
+    # validation_retry: 1-based output attempt that was rejected, and the
+    # total attempts allowed (pydantic-ai retries={"output": N} ⇒ N+1 attempts).
     attempt: int | None = Field(default=None, ge=1)
     max_attempts: int | None = Field(default=None, ge=1)
+    # Reserved for SSE / multi-model UI; emitters leave this unset for now.
     model_id: str | None = None
     reasons: list[str] = Field(default_factory=list)
 
@@ -69,7 +70,15 @@ def reset_progress(token: Token[ProgressReporter | None]) -> None:
 
 
 async def report_progress(event: ProgressEvent) -> None:
-    """Emit to the reporter bound for this task, if any (no-op otherwise)."""
+    """Emit to the reporter bound for this task, if any (no-op otherwise).
+
+    Reporter errors are swallowed so observability cannot fail generation.
+    """
     reporter = _current.get()
-    if reporter is not None:
+    if reporter is None:
+        return
+    try:
         await reporter.report(event)
+    except Exception:
+        # Intentionally broad: any sink bug/backpressure must not fail the run.
+        return
