@@ -72,6 +72,17 @@ def test_touching_notes_allowed_on_vocal_track() -> None:
     assert melody(notes=touching)
 
 
+def test_sub_tick_overlap_allowed_on_vocal_track() -> None:
+    # 480 ticks/beat means one tick is ~0.0021 beats; an overlap smaller than
+    # that is below the exporter's resolution and must not be rejected as
+    # non-monophonic (see BEAT_EPSILON in domain/models.py).
+    sub_tick_overlap = [
+        Note(start=0.0, duration=1.0005, pitch=64),
+        Note(start=1.0, duration=1.0, pitch=67),
+    ]
+    assert melody(notes=sub_tick_overlap)
+
+
 def test_unordered_notes_still_checked_for_overlap() -> None:
     # Overlap must be detected regardless of the order notes arrive in.
     with pytest.raises(ValidationError, match="not monophonic"):

@@ -62,8 +62,12 @@ class StubSongGenerator:
                 tracks.append(_riff(GM_PROGRAM_NAMES[program], program))
 
         return Song(
-            # ponytail: prompt text stays out of the title until the exporter's
-            # Latin-1 folding handles arbitrary user input end-to-end (slice 2).
+            # ponytail: this is the deterministic stub generator (canned output
+            # for tests/LLM-free dev, see module docstring) — prompt text isn't
+            # threaded into the title because there's no real generation here to
+            # derive a title from. Revisit once the real LLM-backed generator
+            # lands (slice 2); the exporter itself already handles arbitrary
+            # script/user input end-to-end via UTF-8 passthrough.
             title="Melos Sketch",
             tempo_bpm=request.tempo_bpm or 100,
             key=request.key or "C",

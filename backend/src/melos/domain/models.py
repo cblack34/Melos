@@ -50,7 +50,7 @@ MAX_MELODIC_TRACKS = 15  # 16 MIDI channels minus the percussion channel
 
 # Beat positions are floats, so equality needs slack. A 480-tick beat means one
 # tick is ~0.002 beats; anything under that is below the exporter's resolution.
-BEAT_EPSILON = 1e-6
+BEAT_EPSILON = 2e-3
 
 
 class Note(BaseModel):
@@ -106,6 +106,14 @@ class Track(BaseModel):
     one note at a time, because that is what a voice can do. A polyphonic choir
     chord is an instrument track using a choir program, not a vocal track; each
     harmony part gets its own vocal track.
+
+    Caveat: pydantic-core applies assignment before re-running ``model_validator``
+    and does not roll back the field on failure, so a rejected mutation (e.g.
+    setting ``is_vocal = True`` on a track with overlapping notes) leaves the
+    instance holding the new, invalid value rather than the old one. Treat a
+    ``Track`` as effectively immutable after construction; do not assign to its
+    fields and rely on ``is_vocal`` still meaning "monophonic" if a prior
+    assignment raised.
     """
 
     model_config = ConfigDict(validate_assignment=True)

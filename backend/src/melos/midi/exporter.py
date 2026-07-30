@@ -5,6 +5,7 @@ MIDI track per domain track. Lyric syllables become ``lyrics`` meta events at
 their note's start tick.
 """
 
+import unicodedata
 from io import BytesIO
 from operator import itemgetter
 
@@ -37,11 +38,19 @@ _SMART_PUNCTUATION = {
     "\u2026": "...",  # horizontal ellipsis
 }
 
+# Control (Cc) and format (Cf) characters \u2014 e.g. bidi overrides like U+202E \u2014
+# have no business in MIDI meta text and the old Latin-1 encode check used to
+# reject them as a side effect; UTF-8 output no longer does that for free, so
+# strip them explicitly instead of passing LLM-emitted text through unfiltered.
+_DISALLOWED_CATEGORIES = frozenset({"Cc", "Cf"})
+
 
 def _to_smf_text(text: str) -> str:
     for smart, plain in _SMART_PUNCTUATION.items():
         text = text.replace(smart, plain)
-    return text
+    return "".join(
+        ch for ch in text if unicodedata.category(ch) not in _DISALLOWED_CATEGORIES
+    )
 
 
 def export_song(song: Song) -> bytes:
