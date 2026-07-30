@@ -176,6 +176,17 @@ def test_hosted_budgets_leave_room_for_reasoning_tokens() -> None:
         assert hosted_cap >= 16_000
 
 
+def test_local_budgets_match_documented_32k_context_values() -> None:
+    # These exact values are a hard *context* constraint per _max_tokens's
+    # docstring (prompt + retries + output all share the local 32k window),
+    # not just "smaller than hosted" -- pin them so a future edit can't
+    # silently eat into that shared budget without a test catching it.
+    local = LlmSettings(_env_file=None)
+    assert generation_model_settings(local)["max_tokens"] == 16_000
+    assert meta_model_settings(local)["max_tokens"] == 2_000
+    assert lyric_model_settings(local)["max_tokens"] == 2_000
+
+
 def test_cloud_tags_get_the_hosted_budget() -> None:
     # Ollama Cloud goes through the local daemon but runs remotely and keeps
     # its default reasoning, so it needs the hosted headroom, not the local cap.
