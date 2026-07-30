@@ -10,7 +10,6 @@ Usage: uv run python scripts/quality_run.py [--out DIR] [--cases N]
 
 import argparse
 import asyncio
-import difflib
 import functools
 import re
 import time
@@ -23,7 +22,7 @@ import mido
 from melos.api.app import default_generator
 from melos.domain.generator import GenerationRequest
 from melos.domain.gm import program_for_name
-from melos.domain.lyrics import syllable_key
+from melos.domain.lyrics import closest_by_syllables, syllable_key
 
 CASES: list[tuple[str, dict[str, object]]] = [
     (
@@ -212,12 +211,7 @@ def _sung_syllables(tracks: list[mido.MidiTrack], wanted: str) -> str:
     exact = [sung for sung in per_track if syllable_key(sung) == wanted_key]
     if exact:
         return exact[0]
-    return max(
-        per_track,
-        key=lambda sung: difflib.SequenceMatcher(
-            None, syllable_key(sung), wanted_key
-        ).ratio(),
-    )
+    return closest_by_syllables(per_track, wanted, text=lambda sung: sung)
 
 
 def _lyrics_aligned(tracks: list[mido.MidiTrack], failures: list[str]) -> bool:

@@ -26,6 +26,7 @@ export default function App() {
   const [timeSignature, setTimeSignature] = useState('')
   const [lyrics, setLyrics] = useState('')
   const [busy, setBusy] = useState(false)
+  const [lyricsBusy, setLyricsBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function generate(event: FormEvent) {
@@ -120,8 +121,13 @@ export default function App() {
             </select>
           </label>
         </div>
-        <LyricsField prompt={prompt} lyrics={lyrics} onChange={setLyrics} />
-        <button type="submit" disabled={busy || !prompt.trim()}>
+        <LyricsField
+          prompt={prompt}
+          lyrics={lyrics}
+          onChange={setLyrics}
+          onBusyChange={setLyricsBusy}
+        />
+        <button type="submit" disabled={busy || lyricsBusy || !prompt.trim()}>
           {busy ? 'Generating…' : 'Generate MIDI'}
         </button>
         {error && <p role="alert" className="error">{error}</p>}

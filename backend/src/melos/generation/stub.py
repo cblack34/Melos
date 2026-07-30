@@ -3,11 +3,31 @@
 Returns a canned arrangement; request constraints (tempo, key, time signature,
 instrument include/exclude) are honored deterministically so the
 hard-constraint plumbing stays real even without an LLM.
+
+Lyrics are honored on a best-effort basis, not verified: the melody track
+becomes ``is_vocal`` and sings ``request.lyrics``' words in order (one word
+per note, extending the canned 8-note figure to fit), and one ``Section`` per
+``[tag]`` is emitted, bar-aligned. Unlike the real generator's output
+validator (``generation/ai.py``), none of this is checked against the
+constraints it's built from — it exists so a developer using
+``MELOS_GENERATION_BACKEND=stub`` to work on the lyrics UI sees their input
+reflected in the download rather than silently ignored, not to exercise the
+lyrics contract itself.
 """
+
+import math
 
 from melos.domain.generator import GenerationRequest
 from melos.domain.gm import GM_PROGRAM_NAMES, is_percussion_name, program_for_name
-from melos.domain.models import SOUND_EFFECT_PROGRAMS, Note, Song, TimeSignature, Track
+from melos.domain.lyrics import LyricsSpec
+from melos.domain.models import (
+    SOUND_EFFECT_PROGRAMS,
+    Note,
+    Section,
+    Song,
+    TimeSignature,
+    Track,
+)
 
 _LYRIC_SYLLABLES = ["Me", "los", "sings", "a", "lit", "tle", "song", "now"]
 _MELODY_PITCHES = [60, 62, 64, 65, 67, 65, 64, 60]  # C major run
@@ -28,9 +48,14 @@ class StubSongGenerator:
             is_percussion_name(name) for name in request.exclude_instruments
         )
 
+        spec = request.lyrics_spec
+        time_signature = request.time_signature or TimeSignature(
+            numerator=4, denominator=4
+        )
+
         tracks: list[Track] = []
         melody_program = _first_allowed(_DEFAULT_MELODY_PROGRAM, excluded)
-        tracks.append(_melody(melody_program))
+        tracks.append(_melody(melody_program, spec, time_signature.beats_per_bar))
         bass_program = _first_allowed(
             _DEFAULT_BASS_PROGRAM, excluded | {melody_program}
         )
@@ -71,9 +96,9 @@ class StubSongGenerator:
             title="Melos Sketch",
             tempo_bpm=request.tempo_bpm or 100,
             key=request.key or "C",
-            time_signature=request.time_signature
-            or TimeSignature(numerator=4, denominator=4),
+            time_signature=time_signature,
             tracks=tracks,
+            sections=_sections(spec, time_signature.beats_per_bar),
             allow_sound_effects=any(
                 program_for_name(name) in SOUND_EFFECT_PROGRAMS
                 for name in request.include_instruments
@@ -88,15 +113,37 @@ def _first_allowed(preferred: int, blocked: set[int | None]) -> int:
     return next(program for program in range(120) if program not in blocked)
 
 
-def _melody(program: int) -> Track:
+def _sections(spec: LyricsSpec, bar: float) -> list[Section]:
+    """One ``Section`` per ``[tag]``, one bar apart -- always aligned to a bar
+    line regardless of time signature, and always ending before the melody
+    track's end (``_melody`` sizes itself to guarantee that)."""
+    return [
+        Section(name=name, start_beat=i * bar)
+        for i, name in enumerate(spec.section_names)
+    ]
+
+
+def _melody(program: int, spec: LyricsSpec, bar: float) -> Track:
+    """The lead line. Sung words from the request replace the canned
+    syllables (one word per note); the note count extends past the canned 8
+    to fit every word and every requested section's bar (see ``_sections``),
+    reusing the canned pitch contour cyclically for the extra notes.
+    """
+    words = spec.sung_text.split() if spec.has_lyrics else _LYRIC_SYLLABLES
+    min_notes_for_sections = math.ceil(len(spec.section_names) * bar)
+    note_count = max(len(_MELODY_PITCHES), len(words), min_notes_for_sections)
     return Track(
         name="Melody",
         program=program,
+        is_vocal=True,
         notes=[
-            Note(start=float(i), duration=1.0, pitch=pitch, lyric=syllable)
-            for i, (pitch, syllable) in enumerate(
-                zip(_MELODY_PITCHES, _LYRIC_SYLLABLES, strict=True)
+            Note(
+                start=float(i),
+                duration=1.0,
+                pitch=_MELODY_PITCHES[i % len(_MELODY_PITCHES)],
+                lyric=words[i] if i < len(words) else None,
             )
+            for i in range(note_count)
         ],
     )
 

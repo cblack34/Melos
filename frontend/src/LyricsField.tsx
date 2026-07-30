@@ -16,17 +16,30 @@ interface Props {
   prompt: string
   lyrics: string
   onChange: (lyrics: string) => void
+  /** Reports this field's own in-flight "Write" request so a parent can fold
+   * it into its own busy/disabled state (e.g. the "Generate MIDI" button). */
+  onBusyChange?: (busy: boolean) => void
 }
 
-export default function LyricsField({ prompt, lyrics, onChange }: Props) {
+export default function LyricsField({
+  prompt,
+  lyrics,
+  onChange,
+  onBusyChange,
+}: Props) {
   const [composerOpen, setComposerOpen] = useState(false)
   const [topic, setTopic] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  function setBusyState(next: boolean) {
+    setBusy(next)
+    onBusyChange?.(next)
+  }
+
   async function write(event: FormEvent) {
     event.preventDefault()
-    setBusy(true)
+    setBusyState(true)
     setError(null)
     try {
       const response = await fetch('/api/lyrics', {
@@ -58,7 +71,7 @@ export default function LyricsField({ prompt, lyrics, onChange }: Props) {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setBusy(false)
+      setBusyState(false)
     }
   }
 
@@ -72,6 +85,7 @@ export default function LyricsField({ prompt, lyrics, onChange }: Props) {
         placeholder={'Start writing lyrics…\n\n[verse 1]\n{soft brushed drums}'}
         rows={10}
         maxLength={8000}
+        disabled={busy}
       />
       <p className="hint">
         <code>[verse 1]</code> names a section, <code>{'{soft drums}'}</code> is a note

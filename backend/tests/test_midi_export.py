@@ -129,3 +129,11 @@ def test_non_latin_script_lyrics_round_trip(lyric: str) -> None:
     song.tracks[0].notes[0].lyric = lyric
     midi = parse(export_song(song))
     assert next(m.text for m in midi.tracks[1] if m.type == "lyrics") == lyric
+
+
+def test_control_and_format_characters_are_stripped_from_meta_text() -> None:
+    song = make_song()
+    song.tracks[0].notes[0].lyric = "safe‮malicious"
+    midi = parse(export_song(song))
+    lyrics = [msg.text for msg in midi.tracks[1] if msg.type == "lyrics"]
+    assert lyrics[0] == "safemalicious"

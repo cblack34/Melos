@@ -13,8 +13,10 @@ numbers and silent spans needs its own AI call (roadmap). Everything else is
 sung text, and only sung text may become lyric meta events.
 """
 
+import difflib
 import re
 import unicodedata
+from collections.abc import Callable, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -90,4 +92,24 @@ def syllable_key(text: str) -> str:
     stripped = _SYLLABLE_NOISE.sub("", unicodedata.normalize("NFC", text).casefold())
     return "".join(
         ch for ch in stripped if not unicodedata.category(ch).startswith("P")
+    )
+
+
+def closest_by_syllables[T](
+    candidates: Sequence[T], wanted: str, *, text: Callable[[T], str]
+) -> T:
+    """Pick the candidate whose sung text best matches ``wanted``, by syllables.
+
+    Used wherever a "which track actually sang the requested lyrics" decision
+    has to survive a model splitting words into different syllable groups
+    (``generation/ai.py``'s output validator, and ``scripts/quality_run.py``'s
+    independent post-export check of the same claim) — comparison is on
+    ``syllable_key``, not raw text, for the same reason ``syllable_key`` exists.
+    """
+    wanted_key = syllable_key(wanted)
+    return max(
+        candidates,
+        key=lambda candidate: difflib.SequenceMatcher(
+            None, syllable_key(text(candidate)), wanted_key
+        ).ratio(),
     )

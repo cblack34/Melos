@@ -101,6 +101,18 @@ def create_app(
             song = await song_generator.generate(request)
         except AgentRunError as error:
             raise _llm_unavailable(error) from error
+        except UserError as error:
+            # UserError is a sibling of AgentRunError (both subclass RuntimeError
+            # directly), not a subclass, so it needs its own handler here too.
+            # default_generator()'s eager construction in create_app() covers
+            # provider-construction-time misconfiguration (e.g. a missing API
+            # key), but Model.prepare_request() -- called inside Agent.run(),
+            # not at construction -- can also raise UserError at request time
+            # (e.g. an OpenRouter model profile that doesn't support tool
+            # output). Without this handler that surfaces as a bare 500.
+            raise HTTPException(
+                status_code=500, detail=f"generator misconfigured: {error}"
+            ) from error
         try:
             # export_song is CPU-bound but sub-ms for realistic songs (benchmarked
             # ~54ms for an intentionally oversized 8-track/10-min arrangement);

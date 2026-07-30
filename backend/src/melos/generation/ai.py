@@ -7,7 +7,6 @@ validator that sends precise violations back to the model as retries
 (non-negotiable #4). Domain validation via ``to_song`` is the final gate.
 """
 
-import difflib
 from typing import Self
 
 from pydantic import BaseModel, Field, ValidationError
@@ -18,7 +17,7 @@ from pydantic_ai.settings import ModelSettings
 
 from melos.domain.generator import GenerationRequest
 from melos.domain.gm import GM_PROGRAM_NAMES, is_percussion_name, program_for_name
-from melos.domain.lyrics import LyricsSpec, syllable_key
+from melos.domain.lyrics import LyricsSpec, closest_by_syllables, syllable_key
 from melos.domain.models import SOUND_EFFECT_PROGRAMS, Song
 from melos.generation.contract import CompactSong, CompactTrack, to_song
 from melos.generation.meta import MetaResolver, ResolvedMeta
@@ -150,7 +149,7 @@ class Constraints(BaseModel):
             problems.append(
                 f"only vocal tracks (voc=true) may carry lyr; remove it from: {stray}"
             )
-        for track in (t for t in compact.tracks if t.voc and _has_lyrics(t)):
+        for track in (t for t in compact.tracks if t.voc):
             problems.extend(_range_problems(track))
 
         if not self.lyrics.has_lyrics:
@@ -165,11 +164,8 @@ class Constraints(BaseModel):
             return problems
         wanted = syllable_key(self.lyrics.sung_text)
         if not any(syllable_key(_performed_text(track)) == wanted for track in singers):
-            closest = max(
-                singers,
-                key=lambda t: difflib.SequenceMatcher(
-                    None, syllable_key(_performed_text(t)), wanted
-                ).ratio(),
+            closest = closest_by_syllables(
+                singers, self.lyrics.sung_text, text=_performed_text
             )
             problems.append(
                 "one vocal track must sing the supplied lyrics complete and in"
