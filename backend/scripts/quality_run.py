@@ -162,8 +162,7 @@ async def main() -> int:
             problems = check_case(request, data)
         except Exception as error:  # report and continue: a run surveys all cases
             print(
-                f"FAIL {name}: error after "
-                f"{time.monotonic() - started:.0f}s: {error}"
+                f"FAIL {name}: error after {time.monotonic() - started:.0f}s: {error}"
             )
             failed += 1
             continue
