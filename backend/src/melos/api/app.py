@@ -12,6 +12,7 @@ from melos.generation.llm import (
     generation_model,
     generation_model_settings,
     meta_model,
+    meta_model_settings,
     supports_native_output,
 )
 from melos.generation.meta import MetaResolver
@@ -24,11 +25,14 @@ def default_generator(settings: LlmSettings | None = None) -> SongGenerator:
     settings = settings if settings is not None else LlmSettings()
     if settings.generation_backend == "stub":
         return StubSongGenerator()
-    native = supports_native_output(settings)
     return PydanticAISongGenerator(
         generation_model(settings),
-        MetaResolver(meta_model(settings), use_native_output=native),
-        use_native_output=native,
+        MetaResolver(
+            meta_model(settings),
+            use_native_output=supports_native_output(settings.meta_model, settings),
+            model_settings=meta_model_settings(settings),
+        ),
+        use_native_output=supports_native_output(settings.generation_model, settings),
         model_settings=generation_model_settings(settings),
     )
 

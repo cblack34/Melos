@@ -41,6 +41,16 @@ Structured-output notes (verified against vendor docs):
 - Ollama truncation risk is context fill, not output cap (`num_predict` defaults to −1). There is no per-request way to raise the context window through Ollama's OpenAI-compatible endpoint (confirmed against Ollama's own docs, `docs/api/openai-compatibility.mdx`: the only supported mechanism is a custom Modelfile with `PARAMETER num_ctx <N>`, or the server-wide `OLLAMA_CONTEXT_LENGTH` env var) — `ModelSettings(extra_body=...)` is silently ignored by Ollama's compat layer, not a working override.
 - All local picks are Apache-2.0 (license gate); `pydantic-ai-slim[openai,openrouter]` is MIT (openai extra covers Ollama). Its `openai` extra transitively pulls in `certifi` and `tqdm` (both MPL-2.0, weak/file-level copyleft) — accepted as unavoidable given the OpenAI-SDK-based transport, and low-risk since Melos uses both unmodified.
 
+### Live quality-pass findings (2026-07-29, story #19)
+
+Verified empirically against a running Ollama 0.32 on an M4 Pro / 48 GB:
+
+- **Disable thinking on local models.** qwen3.x reasons in prose for thousands of tokens (~12.5 t/s) before the constrained JSON begins; a song generation blew the 32k context and 400'd. Ollama's OpenAI-compat endpoint honors `reasoning_effort: "none"` (top-level `think: false` and Qwen's `/no_think` are ignored). Applied automatically to local models in `generation/llm.py`; meta calls dropped from ~64s to ~2s.
+- **Grammar ceiling: `maxItems` ≤ 1000.** llama.cpp's json_schema→grammar conversion fails ("failed to parse grammar") for `maxItems: 5000`; passes at 1000 (bisected). The compact contract's per-track note cap is 1000 accordingly.
+- **Baseline result (local `qwen3.6:27b` + `qwen3.5:9b`):** 4/4 acceptance cases pass — meta echo exact, instrument include/exclude honored, lyrics aligned to note onsets, multi-track SMF. 1.5–10 min per song (`scripts/quality_run.py`).
+- **Ollama Cloud:** free tier on this account covers `gpt-oss:120b-cloud` only (deepseek/glm/kimi cloud tags 403 → subscription). Cloud models don't enforce json_schema, so the factory automatically drops to ToolOutput for `*-cloud`/`*:cloud` tags; set `MELOS_GENERATION_MODEL=gpt-oss:120b-cloud` to use it.
+- **Cloud result (`gpt-oss:120b-cloud`):** 4/4 acceptance cases pass, 1–4 min per song (~3× faster than local) with denser arrangements (up to 5 tracks / ~300 notes). One transient cloud-side 500 observed across two runs — the route's 502 mapping plus a client retry covers it. Good free upgrade over the local default when online.
+
 ## Dependency rules
 
 - Only very open licenses: MIT, Apache 2.0, or clear equivalents. No AGPL or strong copyleft.

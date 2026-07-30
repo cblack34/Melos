@@ -113,7 +113,7 @@ def test_note_end_position_is_bounded_even_when_s_and_d_are_individually_valid()
 def test_note_count_per_track_is_bounded() -> None:
     flood = {
         **MELODY_TRACK,
-        "notes": [{"s": i * 0.1, "d": 0.1, "p": 60} for i in range(5_001)],
+        "notes": [{"s": i * 0.1, "d": 0.1, "p": 60} for i in range(1_001)],
     }
     with pytest.raises(ValidationError):
         CompactSong.model_validate(payload(tracks=[flood, DRUMS_TRACK]))
