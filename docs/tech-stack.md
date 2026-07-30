@@ -30,7 +30,7 @@ Dev runs against local Ollama (default); production against OpenRouter. Switch v
 | AI task | Dev (Ollama) | Prod (OpenRouter) | Why |
 | --- | --- | --- | --- |
 | MIDI content generation | `qwen3.6:27b` (Apache-2.0, 256K ctx) | `anthropic/claude-sonnet-5` ($2/$10 per M, 128k max out) | Qwen 27B leads IFEval among local models fitting 48 GB unified memory; Sonnet 5 has the best hard-constraint obedience + native strict json_schema |
-| Lyric generation | `qwen3.6:27b` (reuse) | `anthropic/claude-sonnet-5` | Claude family tops creative-writing benchmarks; one prod model simplifies ops |
+| Lyric generation (`MELOS_LYRIC_MODEL`) | `qwen3.6:27b` (reuse) | `anthropic/claude-sonnet-5` | Claude family tops creative-writing benchmarks; one prod model simplifies ops |
 | Meta resolution | `qwen3.5:9b` (Apache-2.0) | `openai/gpt-5-nano` ($0.05/$0.40 per M) | Tiny fill-in schema; cheapest model with strict json_schema once routed via `require_parameters` (see caveat below) |
 
 Budget fallback for prod generation: `deepseek/deepseek-v4-pro` (~10× cheaper, 384k max out, weaker constraint adherence).
@@ -50,6 +50,15 @@ Verified empirically against a running Ollama 0.32 on an M4 Pro / 48 GB:
 - **Baseline result (local `qwen3.6:27b` + `qwen3.5:9b`):** 4/4 acceptance cases pass — meta echo exact, instrument include/exclude honored, lyrics aligned to note onsets, multi-track SMF. 1.5–10 min per song (`scripts/quality_run.py`).
 - **Ollama Cloud:** free tier on this account covers `gpt-oss:120b-cloud` only (deepseek/glm/kimi cloud tags 403 → subscription). Cloud models don't enforce json_schema, so the factory automatically drops to ToolOutput for `*-cloud`/`*:cloud` tags; set `MELOS_GENERATION_MODEL=gpt-oss:120b-cloud` to use it.
 - **Cloud result (`gpt-oss:120b-cloud`):** 4/4 acceptance cases pass, 1–4 min per song (~3× faster than local) with denser arrangements (up to 5 tracks / ~300 notes). One transient cloud-side 500 observed across two runs — the route's 502 mapping plus a client retry covers it. Good free upgrade over the local default when online.
+
+### Live quality-pass findings (2026-07-30, story #31 — lyrics & sections)
+
+Two failure modes that **unit tests cannot see** — the mocked suite was fully green while both were happening. Found by running real generations, fixed in the instructions, then confirmed by re-running:
+
+- **Transliteration.** Asked to sing 咲く, the model emitted さく — the same sound, but no longer the characters the user typed. A lyric sheet should come back as written, so the instructions forbid transliterating, romanizing, translating, and respelling. This only shows up in non-phonetic scripts, so an English-only test suite would never catch it.
+- **Melisma repetition.** The model emitted `Morningrning` and `Carryry`: the whole word on the first note, then a continuation fragment. Per-note guidance ("one syllable per note") was too weak; stating the rule the validator actually checks — concatenating `lyr` in note order reproduces the text exactly once, words spread over notes get *consecutive* pieces — fixed it.
+- **Not a defect:** a model adding its own `Intro`/`Verse`/`Chorus` markers when the request specified no `[tags]`. Sections are optional and `_section_problems` deliberately leaves the model free there; a quality check that flagged this failed two otherwise-passing cases.
+- **Result:** 7/7 cases pass on `gpt-oss:120b-cloud`, 1.5–6 min per song, including supplied lyrics with sections, Japanese lyrics, and structure-tags-only instrumentals. Transient cloud-side 500s remain occasional (three sightings across five runs) and are cloud-side, not ours.
 
 ## Dependency rules
 

@@ -11,7 +11,15 @@ from typing import Protocol, Self
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from melos.domain.gm import is_percussion_name, program_for_name
+from melos.domain.lyrics import LyricsSpec, parse_lyrics, syllable_key
 from melos.domain.models import KeyName, Song, TimeSignature
+
+# Kept in sync by hand with generation/contract.py's _MAX_SECTIONS and
+# CompactSection.n's max_length: domain must not import the generation layer
+# (Clean Architecture — generation depends on domain, not the reverse), so
+# the contract's ceilings are mirrored here rather than imported.
+_MAX_LYRIC_SECTIONS = 64
+_MAX_SECTION_NAME_LENGTH = 80
 
 
 class GenerationRequest(BaseModel):
@@ -23,6 +31,9 @@ class GenerationRequest(BaseModel):
     tempo_bpm: float | None = Field(default=None, ge=20, le=400)
     key: KeyName | None = None
     time_signature: TimeSignature | None = None
+    # One free-text field: [section] tags, {directives}, and sung lines.
+    # Blank means an instrumental (see domain/lyrics.py).
+    lyrics: str | None = Field(default=None, max_length=8000)
     # General MIDI instrument names (see domain/gm.py), or "drums" for the
     # percussion track. Case-insensitive.
     include_instruments: list[str] = Field(default_factory=list, max_length=8)
@@ -50,6 +61,10 @@ class GenerationRequest(BaseModel):
             )
         return names
 
+    @property
+    def lyrics_spec(self) -> LyricsSpec:
+        return parse_lyrics(self.lyrics)
+
     @model_validator(mode="after")
     def _include_exclude_disjoint(self) -> Self:
         # is_percussion_name() treats "drums"/"drum kit"/"percussion" as the
@@ -65,6 +80,29 @@ class GenerationRequest(BaseModel):
         if overlap:
             names = {included[key] for key in overlap}
             raise ValueError(f"instruments both included and excluded: {names}")
+        return self
+
+    @model_validator(mode="after")
+    def _lyrics_are_satisfiable(self) -> Self:
+        # Catch requests no generation attempt could ever satisfy, before any
+        # LLM call: punctuation-only lyrics collapse to an empty comparison
+        # key (any real sung output would then be flagged as wrong forever),
+        # and a lyrics field asking for more/longer sections than the compact
+        # contract allows can never be matched by any valid output. Both
+        # would otherwise exhaust the 3 output retries and surface as a 502.
+        spec = self.lyrics_spec
+        if spec.has_lyrics and not syllable_key(spec.sung_text):
+            raise ValueError("lyrics must contain sung words, not just punctuation")
+        if len(spec.section_names) > _MAX_LYRIC_SECTIONS:
+            raise ValueError(
+                f"{len(spec.section_names)} sections requested; at most"
+                f" {_MAX_LYRIC_SECTIONS} fit the generation contract"
+            )
+        too_long = [
+            name for name in spec.section_names if len(name) > _MAX_SECTION_NAME_LENGTH
+        ]
+        if too_long:
+            raise ValueError(f"section name(s) too long: {too_long}")
         return self
 
 

@@ -149,6 +149,23 @@ def test_included_instrument_colliding_with_default_program_gets_renamed() -> No
     assert "Melody" not in names
 
 
+def test_stub_sings_requested_lyrics() -> None:
+    """The stub previously ignored ``lyrics`` entirely and always sang its
+    canned syllables; it must now reflect the user's actual words so a
+    developer using MELOS_GENERATION_BACKEND=stub sees the lyrics UI work."""
+    payload = {"prompt": "x", "lyrics": "hello world"}
+    midi = MidiFile(file=BytesIO(generate(payload)))
+    melody_lyrics = [msg.text for msg in midi.tracks[1] if msg.type == "lyrics"]
+    assert melody_lyrics == ["hello", "world"]
+
+
+def test_stub_emits_sections_matching_lyric_tags() -> None:
+    payload = {"prompt": "x", "lyrics": "[verse 1]\nhello\n[chorus]\nworld"}
+    midi = MidiFile(file=BytesIO(generate(payload)))
+    markers = [msg.text for msg in midi.tracks[0] if msg.type == "marker"]
+    assert markers == ["verse 1", "chorus"]
+
+
 def test_included_sound_effect_does_not_crash_stub() -> None:
     """Sound-effect programs (GM 120-127) are melodic-track-illegal unless
     Song.allow_sound_effects is set; the stub must set it when the request

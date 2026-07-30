@@ -63,3 +63,86 @@
 .melos .error {
   color: #c0392b;
 }
+
+.melos .lyrics {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.melos .lyrics > label {
+  font-weight: 600;
+}
+
+.melos .lyrics textarea {
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.melos .hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  opacity: 0.9;
+}
+
+.melos .hint code {
+  font-size: 0.8125rem;
+}
+
+.melos button.ghost {
+  align-self: flex-start;
+  margin-top: 0.25rem;
+  padding: 0.4rem 0.75rem;
+  background: transparent;
+  color: inherit;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 999px;
+}
+
+.melos .composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 0.5rem;
+}
+
+/* Kept mounted (not conditionally rendered) so aria-controls always points
+   at a real node; the [hidden] attribute toggles visibility instead. Needs
+   this explicit override since .composer's own `display: flex` otherwise
+   wins over the UA stylesheet's `[hidden] { display: none }`. */
+.melos .composer[hidden] {
+  display: none;
+}
+
+/* Scrollable row rather than a wrapping grid: chips are shortcuts, so running
+   off the edge is fine and keeps the composer a fixed height. */
+.melos .chips {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.melos button.chip {
+  flex: none;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.875rem;
+  font-weight: 400;
+  background: transparent;
+  color: inherit;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.melos .composer-input {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.melos .composer-input input {
+  flex: 1;
+}
