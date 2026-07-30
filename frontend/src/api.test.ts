@@ -4,6 +4,8 @@ import {
   buildLyricRequest,
   errorMessageFrom,
   filenameFrom,
+  midiBlobFromBase64,
+  parseSseBlock,
 } from './api'
 
 const EMPTY = {
@@ -147,5 +149,36 @@ describe('filenameFrom', () => {
 
   it('falls back to song.mid without a disposition header', () => {
     expect(filenameFrom(new Response(null))).toBe('song.mid')
+  })
+})
+
+describe('parseSseBlock', () => {
+  it('parses a progress event data line', () => {
+    const block = [
+      'event: validation_retry',
+      'data: {"phase":"validation_retry","attempt":1,"max_attempts":4,"reasons":["bpm must be exactly 97"]}',
+    ].join('\n')
+    expect(parseSseBlock(block)).toEqual({
+      phase: 'validation_retry',
+      attempt: 1,
+      max_attempts: 4,
+      reasons: ['bpm must be exactly 97'],
+    })
+  })
+
+  it('returns null for empty or non-data frames', () => {
+    expect(parseSseBlock('')).toBeNull()
+    expect(parseSseBlock('event: ping\n')).toBeNull()
+    expect(parseSseBlock('data: not-json')).toBeNull()
+  })
+})
+
+describe('midiBlobFromBase64', () => {
+  it('decodes base64 into an audio/midi blob', async () => {
+    const raw = 'MThd'
+    const b64 = btoa(raw)
+    const blob = midiBlobFromBase64(b64)
+    expect(blob.type).toBe('audio/midi')
+    expect(await blob.text()).toBe(raw)
   })
 })
