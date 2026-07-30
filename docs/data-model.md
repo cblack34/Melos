@@ -31,7 +31,7 @@ Comparison ignores *how* the model split syllables — casing, punctuation, hyph
 
 Supplied lyrics are reproduced **glyph for glyph**: the model may split them across notes but must not transliterate, romanize, or respell them. This matters for non-phonetic scripts — a model asked to sing 咲く will happily emit さく, which is the same sound but no longer the words the user typed, and a DAW should show the lyric sheet as written.
 
-**Known ceiling:** a true call-and-response, where no single voice sings every line, trips the completeness check. The upgrade path is merging lyric events across vocal tracks by tick with same-tick dedup; not built until it is needed.
+**Known ceiling (applies once completeness enforcement is back on):** a true call-and-response, where no single voice sings every line, would trip the completeness check. The upgrade path is merging lyric events across vocal tracks by tick with same-tick dedup; not built until it is needed.
 
 **Known tradeoff:** normalizing away word-split noise (whitespace, hyphens, underscores) is *all-or-nothing* — it also erases the boundary between "space = new word" and "space = a sloppy mid-word split," so two different sentences that happen to share letters can compare equal (e.g. "an ice cream" and "a nice cream" both normalize to `anicecream`). This is accepted, not accidental: the normalization is required for the model to legally represent a syllable split like `lov` + `er` as one word. Tightening it would need a per-note signal (e.g. an explicit new-word marker) rather than a purely textual comparison; not built until the false-pass rate in practice justifies it.
 
