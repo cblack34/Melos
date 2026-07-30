@@ -52,8 +52,18 @@ def meta_model(settings: LlmSettings) -> Model:
     return build_model(settings.meta_model, settings)
 
 
+# Hosted reasoning models whose thinking mode rejects pydantic-ai's forced
+# tool_choice (ToolOutput always forces one). Confirmed live: OpenRouter's
+# `deepseek/*` endpoints 400 with "Thinking mode does not support this
+# tool_choice"; Claude and GPT-5-family models were tested with the identical
+# forced tool_choice and have no such conflict, so this is a per-model
+# incompatibility, not a general reasoning+tool_choice rule — don't broaden it
+# without the same live confirmation.
+_INCOMPATIBLE_REASONING_PREFIXES = ("deepseek/",)
+
+
 def _no_thinking(model_name: str, settings: LlmSettings) -> ModelSettings:
-    """Disable thinking on local Ollama models.
+    """Disable thinking where it would otherwise burn tokens or break the call.
 
     Local thinking models (qwen3.x) burn thousands of reasoning tokens at
     ~12 t/s before the schema-constrained JSON starts — verified live: it
@@ -62,9 +72,16 @@ def _no_thinking(model_name: str, settings: LlmSettings) -> ModelSettings:
     ``think: false`` and Qwen's ``/no_think`` are ignored — tested). Cloud
     models keep their default reasoning: they are fast, and gpt-oss doesn't
     accept "none".
+
+    On OpenRouter, DeepSeek's reasoning models reject a forced tool_choice
+    outright while thinking — OpenRouter's unified ``reasoning: {"enabled":
+    false}`` (verified live) sidesteps that, at the cost of losing DeepSeek's
+    reasoning for this call.
     """
     if is_local_model(model_name, settings):
         return ModelSettings(extra_body={"reasoning_effort": "none"})
+    if model_name.lower().startswith(_INCOMPATIBLE_REASONING_PREFIXES):
+        return ModelSettings(extra_body={"reasoning": {"enabled": False}})
     return ModelSettings()
 
 
