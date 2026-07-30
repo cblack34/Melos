@@ -6,11 +6,26 @@ Pydantic V2 models are the single source of truth for song structure. The LLM th
 
 The exact field names and nesting are for the agent to finalize, but the shape must support:
 
-- **Song** — tempo, key, time signature, metadata, list of tracks
+- **Song** — tempo, key, time signature, metadata, list of tracks, optional sections
 - **Track** — name, program/instrument hint, notes, control changes, pitch bends, lyrics
 - **Note** — start time, duration (or end), pitch, velocity, optional lyric syllable
+- **Section** — a named span of the arrangement (`verse 1`, `chorus`), exported as a MIDI marker
 - **ControlChange / PitchBend** — timed expression data
 - **Generation request** — prompt, optional constraints (key, tempo, structure, lyrics direction, instrumentation)
+
+## Sections
+
+Sections carry only a name and a start beat — a section ends where the next begins. Names are free text and repeats are expected (`chorus` appears several times), so sections are a **sequence, not a set**. They start at the top of the song and land on bar lines, because real arrangements change on the bar.
+
+## Vocals
+
+- `is_vocal` marks **a singable single-voice line** — words optional, but one note at a time, because that is what a voice can do. Enforced: vocal tracks are monophonic.
+- Multi-part harmony means one vocal track per part. A polyphonic choir *chord* is an instrument track using a choir program, not a vocal track.
+- Lyric syllables belong on vocal tracks. The lead is not a flag — it is simply the vocal track carrying the supplied lyrics.
+
+## Text encoding
+
+The SMF spec predates Unicode and names no encoding for meta text. Files are written **UTF-8** so lyrics, titles, and section names in any script survive; smart punctuation is still normalized to ASCII equivalents, which render more predictably across DAWs.
 
 ## Instrumentation
 

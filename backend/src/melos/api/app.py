@@ -89,4 +89,6 @@ def _filename(title: str) -> str:
     return f"{slug}.mid"
 
 
-app = create_app()
+# No module-level `app`: building the generator (and its provider client) at
+# import time is a side effect that fires on any import, including test
+# collection. Served via `uvicorn --factory melos.api.app:create_app`.

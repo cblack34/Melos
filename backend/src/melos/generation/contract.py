@@ -14,7 +14,14 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from melos.domain.models import KeyName, Note, Song, TimeSignature, Track
+from melos.domain.models import (
+    KeyName,
+    Note,
+    Section,
+    Song,
+    TimeSignature,
+    Track,
+)
 
 # Only SMF-valid denominators; a schema-enforcing provider can't emit "4/3".
 # ASCII digits only ([0-9], not \d) so a fullwidth Unicode digit can't sneak
@@ -35,6 +42,7 @@ _MAX_BEAT = 10_000.0  # ~83 min (1.4 h) at 120 BPM; far beyond any real song
 # ~8 minutes of music.
 _MAX_NOTES_PER_TRACK = 1_000
 _MAX_TRACKS = 16  # MIDI channel count; domain rules tighten this further
+_MAX_SECTIONS = 64  # a song with 64 sections is a runaway, not an arrangement
 
 
 class CompactNote(BaseModel):
@@ -62,7 +70,20 @@ class CompactTrack(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     prog: int = Field(ge=0, le=127, description="General MIDI program, 0-indexed")
     perc: bool = False
+    voc: bool = Field(
+        default=False,
+        description="true for a sung single-voice line (one note at a time)",
+    )
     notes: list[CompactNote] = Field(min_length=1, max_length=_MAX_NOTES_PER_TRACK)
+
+
+class CompactSection(BaseModel):
+    """A named span: n(ame), s(tart beat). Starts on a bar line."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    n: str = Field(min_length=1, max_length=80)
+    s: float = Field(ge=0, le=_MAX_BEAT)
 
 
 class CompactSong(BaseModel):
@@ -73,6 +94,9 @@ class CompactSong(BaseModel):
     key: KeyName
     ts: str = Field(pattern=_TIME_SIGNATURE_REGEX, description='e.g. "4/4"')
     tracks: list[CompactTrack] = Field(min_length=2, max_length=_MAX_TRACKS)
+    sections: list[CompactSection] = Field(
+        default_factory=list, max_length=_MAX_SECTIONS
+    )
 
 
 def to_song(compact: CompactSong, *, allow_sound_effects: bool = False) -> Song:
@@ -92,11 +116,16 @@ def to_song(compact: CompactSong, *, allow_sound_effects: bool = False) -> Song:
             {"numerator": int(numerator), "denominator": int(denominator)}
         ),
         allow_sound_effects=allow_sound_effects,
+        sections=[
+            Section(name=section.n, start_beat=section.s)
+            for section in compact.sections
+        ],
         tracks=[
             Track(
                 name=track.name,
                 program=track.prog,
                 is_percussion=track.perc,
+                is_vocal=track.voc,
                 notes=[
                     Note(
                         start=note.s,
