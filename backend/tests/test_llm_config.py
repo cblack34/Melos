@@ -69,6 +69,23 @@ def test_openrouter_rejects_a_bare_lyric_model_id() -> None:
         )
 
 
+def test_openrouter_bare_model_error_names_all_three_env_vars() -> None:
+    # The remediation hint must name every per-task env var, including the
+    # one that actually failed -- a `match="lyric_model"` assertion alone
+    # would also match the unrelated "lyric_model=..." prefix.
+    with pytest.raises(
+        ValidationError,
+        match="MELOS_GENERATION_MODEL, MELOS_META_MODEL, and MELOS_LYRIC_MODEL",
+    ):
+        LlmSettings(
+            _env_file=None,
+            llm_provider="openrouter",
+            generation_model="anthropic/claude-sonnet-5",
+            meta_model="openai/gpt-5-nano",
+            lyric_model="qwen3.6:27b",
+        )
+
+
 def test_ollama_base_url_is_configurable() -> None:
     config = LlmSettings(
         _env_file=None, ollama_base_url="http://host.docker.internal:11434/v1"

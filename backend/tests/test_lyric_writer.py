@@ -16,7 +16,7 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from melos.api.app import create_app
-from melos.generation.lyric_writer import LyricRequest, LyricWriter
+from melos.generation.lyric_writer import LyricRequest, LyricWriter, WrittenLyrics
 from melos.generation.stub import StubSongGenerator
 
 WRITTEN = "[verse 1]\nMorning light\n\n[chorus]\nCarry me home"
@@ -90,6 +90,14 @@ def test_unknown_fields_rejected() -> None:
         LyricRequest.model_validate({"topic": "x", "mood": "happy"})
 
 
+@pytest.mark.parametrize("blank", ["", "   ", "\n"])
+def test_blank_lyrics_are_rejected(blank: str) -> None:
+    # min_length=1 alone counts raw characters, so whitespace-only text would
+    # otherwise pass as "written lyrics" with no retry triggered.
+    with pytest.raises(ValidationError, match="must not be blank"):
+        WrittenLyrics(lyrics=blank)
+
+
 @pytest.mark.anyio
 async def test_native_output_mode_reads_a_json_text_part() -> None:
     def respond(_: list[ModelMessage], info: AgentInfo) -> ModelResponse:
@@ -121,3 +129,33 @@ def test_endpoint_rejects_an_empty_request() -> None:
 def test_endpoint_rejects_unknown_fields() -> None:
     payload = {"topic": "x", "style": "jazz"}
     assert client().post("/api/lyrics", json=payload).status_code == 422
+
+
+def test_endpoint_maps_agent_run_error_to_502() -> None:
+    def respond(_: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, {})])
+
+    broken = LyricWriter(FunctionModel(respond), use_native_output=False)
+    response = TestClient(create_app(StubSongGenerator(), broken)).post(
+        "/api/lyrics", json={"topic": "anything"}
+    )
+    assert response.status_code == 502
+    assert response.json()["detail"].startswith("generation failed:")
+
+
+def test_endpoint_maps_misconfigured_provider_to_500(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The lyric writer is built lazily on first request (see _writer() in
+    # app.py), so a missing OPENROUTER_API_KEY only surfaces here, as a
+    # UserError raised synchronously by OpenRouterProvider -- a sibling of
+    # AgentRunError, not a subclass, so it needs its own mapping.
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setenv("MELOS_LLM_PROVIDER", "openrouter")
+    monkeypatch.setenv("MELOS_GENERATION_MODEL", "anthropic/claude-sonnet-5")
+    monkeypatch.setenv("MELOS_META_MODEL", "openai/gpt-5-nano")
+    monkeypatch.setenv("MELOS_LYRIC_MODEL", "anthropic/claude-sonnet-5")
+    app = create_app(StubSongGenerator())
+    response = TestClient(app).post("/api/lyrics", json={"topic": "anything"})
+    assert response.status_code == 500
+    assert response.json()["detail"].startswith("lyric writer misconfigured:")

@@ -7,7 +7,7 @@ generation ignorant of where the words came from.
 
 from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_ai import Agent, NativeOutput
 from pydantic_ai.models import Model
 from pydantic_ai.settings import ModelSettings
@@ -52,6 +52,17 @@ class WrittenLyrics(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     lyrics: str = Field(min_length=1, max_length=8000)
+
+    @field_validator("lyrics", mode="before")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        # mode="before" so this runs ahead of min_length=1, which counts raw
+        # characters -- a whitespace-only response ("", "   ", "\n") would
+        # otherwise pass (or fail with a misleading "too short" message) and
+        # be returned as unusable lyrics with no retry triggered.
+        if not value.strip():
+            raise ValueError("lyrics must not be blank")
+        return value
 
 
 class LyricWriter:

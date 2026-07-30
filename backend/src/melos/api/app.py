@@ -3,7 +3,12 @@
 import re
 
 from fastapi import FastAPI, HTTPException, Response
-from pydantic_ai.exceptions import AgentRunError, ModelAPIError, UnexpectedModelBehavior
+from pydantic_ai.exceptions import (
+    AgentRunError,
+    ModelAPIError,
+    UnexpectedModelBehavior,
+    UserError,
+)
 
 from melos.config import LlmSettings
 from melos.domain.generator import GenerationRequest, SongGenerator
@@ -76,6 +81,19 @@ def create_app(
             return await _writer().write(request)
         except AgentRunError as error:
             raise _llm_unavailable(error) from error
+        except UserError as error:
+            # UserError is a sibling of AgentRunError (both subclass RuntimeError
+            # directly), not a subclass, so it needs its own handler. Raised
+            # synchronously by the provider (e.g. OpenRouterProvider) when the
+            # lazily-built writer is misconfigured -- most commonly a missing
+            # OPENROUTER_API_KEY. default_generator() builds eagerly in
+            # create_app() so the same misconfiguration fails fast at startup;
+            # the lyric writer is built lazily on first use (see _writer()
+            # above), so this is the first point such a misconfiguration can
+            # surface for it.
+            raise HTTPException(
+                status_code=500, detail=f"lyric writer misconfigured: {error}"
+            ) from error
 
     @app.post("/api/generate", response_class=Response)
     async def generate(request: GenerationRequest) -> Response:

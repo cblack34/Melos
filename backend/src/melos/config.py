@@ -40,15 +40,17 @@ class LlmSettings(BaseSettings):
 
     @model_validator(mode="after")
     def _check_openrouter_model_ids(self) -> LlmSettings:
+        per_task_fields = ("generation_model", "meta_model", "lyric_model")
         if self.llm_provider == "openrouter":
-            for field in ("generation_model", "meta_model", "lyric_model"):
+            for field in per_task_fields:
                 value = getattr(self, field)
                 if "/" not in value:
+                    names = [f"MELOS_{name.upper()}" for name in per_task_fields]
+                    env_vars = f"{', '.join(names[:-1])}, and {names[-1]}"
                     raise ValueError(
                         f"{field}={value!r} is not a valid OpenRouter model id"
                         " (expected 'provider/model', e.g."
-                        " 'anthropic/claude-sonnet-5'); set MELOS_GENERATION_MODEL"
-                        " and MELOS_META_MODEL when switching"
-                        " MELOS_LLM_PROVIDER=openrouter."
+                        f" 'anthropic/claude-sonnet-5'); set {env_vars} when"
+                        " switching MELOS_LLM_PROVIDER=openrouter."
                     )
         return self
