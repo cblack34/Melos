@@ -84,3 +84,28 @@ def test_shipped_catalog_parses_and_every_provider_reference_resolves() -> None:
             assert entry.provider in catalog.providers, (
                 f"{entry.id!r} references unknown provider {entry.provider!r}"
             )
+
+
+def test_unknown_provider_reference_rejected_at_load() -> None:
+    with pytest.raises(Exception, match="unknown provider"):
+        ModelCatalog.model_validate(
+            {
+                "providers": {"openrouter": {"kind": "openrouter"}},
+                "models": {
+                    "generation": [
+                        {
+                            "id": "x",
+                            "label": "X",
+                            "provider": "openroutre",  # typo
+                        }
+                    ]
+                },
+            }
+        )
+
+
+def test_shipped_ollama_provider_omits_base_url() -> None:
+    # YAML base_url would shadow MELOS_OLLAMA_BASE_URL (compose uses
+    # host.docker.internal). The default ollama provider must leave it unset.
+    catalog = load_catalog()
+    assert catalog.providers["ollama"].base_url is None

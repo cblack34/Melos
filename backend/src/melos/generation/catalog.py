@@ -8,10 +8,10 @@ additive; it is not the only path a model id can take.
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # catalog.py -> generation -> melos -> src -> backend (repo-root-relative
 # models.yaml would not survive Docker: the build context is ./backend, so
@@ -25,6 +25,9 @@ class ProviderConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     kind: Literal["ollama", "openrouter"]
+    # Optional override of MELOS_OLLAMA_BASE_URL / LlmSettings.ollama_base_url.
+    # Leave unset for the default ollama provider so Docker compose's
+    # host.docker.internal (and any other env default) is not shadowed.
     base_url: str | None = None  # ollama only
 
 
@@ -50,6 +53,17 @@ class ModelCatalog(BaseModel):
 
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
     models: dict[Task, list[ModelCatalogEntry]] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _providers_resolve(self) -> Self:
+        for entries in self.models.values():
+            for entry in entries:
+                if entry.provider not in self.providers:
+                    raise ValueError(
+                        f"model {entry.id!r} references unknown provider"
+                        f" {entry.provider!r}"
+                    )
+        return self
 
     def provider_for(self, entry: ModelCatalogEntry) -> ProviderConfig:
         return self.providers[entry.provider]

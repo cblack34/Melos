@@ -5,7 +5,7 @@ from typing import Literal
 import pytest
 from fastapi.testclient import TestClient
 
-from melos.api.app import create_app
+from melos.api.app import create_app, default_generator
 from melos.config import LlmSettings
 from melos.generation.catalog import ModelCatalog
 from melos.generation.stub import StubSongGenerator
@@ -106,13 +106,56 @@ def test_overriding_one_task_does_not_validate_the_others_untouched_default() ->
     assert response.status_code != 422
 
 
+def test_blank_model_override_is_treated_as_unset() -> None:
+    # Empty string must mean "use server default", not 422 as unknown id "".
+    response = client().post(
+        "/api/generate",
+        json={"prompt": "a tune", "generation_model": "", "meta_model": "  "},
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "audio/midi"
+
+
+def test_default_generator_uses_injected_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # create_app(catalog=custom) without generator= must thread that catalog
+    # into the default AI path — not silently re-load the shipped file.
+    seen: dict[str, object] = {}
+
+    def fake_ai(
+        settings: LlmSettings,
+        catalog: ModelCatalog,
+        generation_model_id: str,
+        meta_model_id: str,
+    ) -> StubSongGenerator:
+        seen["catalog"] = catalog
+        return StubSongGenerator()
+
+    monkeypatch.setattr("melos.api.app.ai_generator", fake_ai)
+    custom = ModelCatalog.model_validate(
+        {"providers": {"openrouter": {"kind": "openrouter"}}, "models": {}}
+    )
+    settings = LlmSettings(_env_file=None, generation_backend="ai")
+    default_generator(settings, custom)
+    assert seen["catalog"] is custom
+
+
 def test_override_model_with_empty_catalog_task_falls_through_uncaught() -> None:
     # An empty catalog task list means "nothing to validate against"; an
     # override naming a task with no catalog entries at all should not 422
     # just because the list is empty (distinct from "id not found in a
-    # populated list").
+    # populated list"). POST with an override — not just GET /api/models —
+    # is what exercises the validation skip for empty task lists.
     empty_catalog = ModelCatalog()
-    settings = LlmSettings(_env_file=None)
+    settings = LlmSettings(_env_file=None, generation_backend="stub")
     app = create_app(StubSongGenerator(), settings=settings, catalog=empty_catalog)
-    response = TestClient(app).get("/api/models")
-    assert response.json() == {"generation": [], "meta": []}
+    http = TestClient(app)
+    assert http.get("/api/models").json() == {"generation": [], "meta": []}
+    # Override takes the AI path (bypasses the stub), so with no provider key
+    # we expect a mapped 500 — not a 422 from empty-catalog validation.
+    response = http.post(
+        "/api/generate",
+        json={"prompt": "a tune", "generation_model": "not-validated-when-empty"},
+    )
+    assert response.status_code != 422

@@ -5,9 +5,12 @@
 # the code-based defaults in generation/llm.py; this file is additive.
 
 providers:
+  # Omit base_url so MELOS_OLLAMA_BASE_URL / LlmSettings.ollama_base_url win
+  # (compose sets host.docker.internal; a YAML localhost would shadow it and
+  # break generation inside the backend container). Set base_url only when
+  # intentionally pointing at a non-default Ollama host.
   ollama:
     kind: ollama
-    base_url: http://localhost:11434/v1
   openrouter:
     kind: openrouter
 

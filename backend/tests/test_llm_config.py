@@ -115,6 +115,18 @@ def test_catalog_provider_base_url_overrides_settings() -> None:
     assert model.base_url == "http://other-host:11434/v1/"
 
 
+def test_catalog_ollama_without_base_url_uses_settings() -> None:
+    # Shipped models.yaml omits ollama.base_url so MELOS_OLLAMA_BASE_URL wins
+    # (critical under docker compose: host.docker.internal, not localhost).
+    config = LlmSettings(
+        _env_file=None, ollama_base_url="http://host.docker.internal:11434/v1"
+    )
+    provider = ProviderConfig(kind="ollama")  # base_url unset
+    model = build_model("qwen3.6:27b", config, provider)
+    assert isinstance(model, OllamaModel)
+    assert model.base_url == "http://host.docker.internal:11434/v1/"
+
+
 def test_settings_read_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MELOS_GENERATION_MODEL", "qwen3.6:35b")
     config = LlmSettings(_env_file=None)

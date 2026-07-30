@@ -77,13 +77,25 @@ def ai_generator(
     )
 
 
-def default_generator(settings: LlmSettings | None = None) -> SongGenerator:
-    """Build the configured generator (creation separate from use)."""
+def default_generator(
+    settings: LlmSettings | None = None,
+    catalog: ModelCatalog | None = None,
+) -> SongGenerator:
+    """Build the configured generator (creation separate from use).
+
+    ``catalog`` is the same instance ``create_app`` uses for ``/api/models`` and
+    per-request overrides — inject it so DI stays consistent when a test (or a
+    custom composition root) passes ``create_app(catalog=...)`` without also
+    supplying ``generator=``.
+    """
     settings = settings if settings is not None else LlmSettings()
     if settings.generation_backend == "stub":
         return StubSongGenerator()
     return ai_generator(
-        settings, load_catalog(), settings.generation_model, settings.meta_model
+        settings,
+        catalog if catalog is not None else load_catalog(),
+        settings.generation_model,
+        settings.meta_model,
     )
 
 
@@ -109,7 +121,11 @@ def create_app(
     # free variables by name, and a type checker cannot assume a captured
     # name keeps its narrowed (non-None) type across the closure boundary.
     resolved_catalog = catalog if catalog is not None else load_catalog()
-    song_generator = generator if generator is not None else default_generator(settings)
+    song_generator = (
+        generator
+        if generator is not None
+        else default_generator(settings, resolved_catalog)
+    )
     app = FastAPI(title="Melos")
 
     def _writer() -> LyricWriter:

@@ -73,6 +73,10 @@ def build_model(
 ) -> Model:
     kind = provider.kind if provider is not None else settings.llm_provider
     if kind == "ollama":
+        # Catalog base_url is an optional override of MELOS_OLLAMA_BASE_URL —
+        # only set it in YAML when intentionally pointing at a non-default
+        # host. Leaving it unset (the shipped default) preserves Docker
+        # compose's host.docker.internal and any other env default.
         catalog_base_url = provider.base_url if provider is not None else None
         base_url = catalog_base_url or settings.ollama_base_url
         return OllamaModel(model_name, provider=OllamaProvider(base_url=base_url))

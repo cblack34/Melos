@@ -41,7 +41,9 @@ class GenerationRequest(BaseModel):
     # Per-request model override (e.g. a UI model picker). Plain ids here --
     # membership in the model catalog is an API-layer (generation/catalog.py)
     # concern, not a domain one; unset means "use the server's configured
-    # default". None if catalog is empty.
+    # default". None if catalog is empty. Blank strings coerce to None so
+    # empty means unset consistently (validation uses is-not-None; resolution
+    # uses truthiness — without coercion, "" would 422 as an unknown id).
     generation_model: str | None = Field(default=None, max_length=200)
     meta_model: str | None = Field(default=None, max_length=200)
 
@@ -50,6 +52,13 @@ class GenerationRequest(BaseModel):
     def _prompt_not_blank(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("prompt must not be blank")
+        return value
+
+    @field_validator("generation_model", "meta_model", mode="before")
+    @classmethod
+    def _blank_model_override_is_unset(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
         return value
 
     @field_validator("include_instruments", "exclude_instruments")
