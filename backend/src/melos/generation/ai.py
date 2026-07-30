@@ -40,6 +40,12 @@ _INSTRUCTIONS = (
     "a space; a syllable held across several notes carries lyr on the first only. "
     "Keep sung pitches in a singable range (MIDI 48-81) and inside about two "
     "octaves. Never put lyr on a non-vocal track, and never sing section names. "
+    "When lyrics are supplied: concatenating every lyr on the vocal track in "
+    "note order must reproduce the supplied text EXACTLY ONCE. Never repeat a "
+    "word or fragment — a word spread over notes gets consecutive pieces "
+    "('Mor' then 'ning'), never the whole word followed by part of it again. "
+    "Reproduce the characters as written: never transliterate, romanize, "
+    "translate, or respell (keep Japanese kanji as kanji, not kana). "
     "Sections: when the message lists them, emit one entry per section in the "
     "same order, each starting on a bar line, the first at beat 0."
 )

@@ -156,15 +156,14 @@ def check_case(request: GenerationRequest, data: bytes) -> list[str]:
 
     spec = request.lyrics_spec
     markers = [msg.text for msg in midi.tracks[0] if msg.type == "marker"]
-    if spec.section_names:
-        if [name.casefold() for name in markers] != [
-            name.casefold() for name in spec.section_names
-        ]:
-            failures.append(f"markers {markers} != requested {spec.section_names}")
-    elif markers:
-        failures.append(
-            f"unexpected section markers with no sections requested: {markers}"
-        )
+    if spec.section_names and [name.casefold() for name in markers] != [
+        name.casefold() for name in spec.section_names
+    ]:
+        failures.append(f"markers {markers} != requested {spec.section_names}")
+    # Markers with no [tags] requested are deliberately NOT a failure: sections
+    # are optional, ai.py's own _section_problems leaves the model free when the
+    # user asked for none, and a model that labels Intro/Verse/Chorus unprompted
+    # is producing better output, not violating anything.
     if spec.has_lyrics or "sung" in request.prompt:
         _lyrics_aligned(instrument_tracks, failures)
     if spec.has_lyrics:
