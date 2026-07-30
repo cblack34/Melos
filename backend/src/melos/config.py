@@ -34,11 +34,14 @@ class LlmSettings(BaseSettings):
     # OpenRouter values (set via env): anthropic/claude-sonnet-5, openai/gpt-5-nano.
     generation_model: str = "qwen3.6:27b"
     meta_model: str = "qwen3.5:9b"
+    # Lyric writing is creative prose, not structured music: same tier as
+    # generation locally, and worth a strong writer in production.
+    lyric_model: str = "qwen3.6:27b"
 
     @model_validator(mode="after")
     def _check_openrouter_model_ids(self) -> LlmSettings:
         if self.llm_provider == "openrouter":
-            for field in ("generation_model", "meta_model"):
+            for field in ("generation_model", "meta_model", "lyric_model"):
                 value = getattr(self, field)
                 if "/" not in value:
                     raise ValueError(

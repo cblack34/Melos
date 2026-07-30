@@ -84,3 +84,14 @@ def meta_model_settings(settings: LlmSettings) -> ModelSettings:
     return ModelSettings(
         max_tokens=1_000, timeout=120, **_no_thinking(settings.meta_model, settings)
     )
+
+
+def lyric_model(settings: LlmSettings) -> Model:
+    return build_model(settings.lyric_model, settings)
+
+
+def lyric_model_settings(settings: LlmSettings) -> ModelSettings:
+    """Lyrics are a page of prose, not a song's worth of notes."""
+    return ModelSettings(
+        max_tokens=2_000, timeout=180, **_no_thinking(settings.lyric_model, settings)
+    )

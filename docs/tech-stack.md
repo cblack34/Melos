@@ -30,7 +30,7 @@ Dev runs against local Ollama (default); production against OpenRouter. Switch v
 | AI task | Dev (Ollama) | Prod (OpenRouter) | Why |
 | --- | --- | --- | --- |
 | MIDI content generation | `qwen3.6:27b` (Apache-2.0, 256K ctx) | `anthropic/claude-sonnet-5` ($2/$10 per M, 128k max out) | Qwen 27B leads IFEval among local models fitting 48 GB unified memory; Sonnet 5 has the best hard-constraint obedience + native strict json_schema |
-| Lyric generation | `qwen3.6:27b` (reuse) | `anthropic/claude-sonnet-5` | Claude family tops creative-writing benchmarks; one prod model simplifies ops |
+| Lyric generation (`MELOS_LYRIC_MODEL`) | `qwen3.6:27b` (reuse) | `anthropic/claude-sonnet-5` | Claude family tops creative-writing benchmarks; one prod model simplifies ops |
 | Meta resolution | `qwen3.5:9b` (Apache-2.0) | `openai/gpt-5-nano` ($0.05/$0.40 per M) | Tiny fill-in schema; cheapest model with strict json_schema once routed via `require_parameters` (see caveat below) |
 
 Budget fallback for prod generation: `deepseek/deepseek-v4-pro` (~10× cheaper, 384k max out, weaker constraint adherence).
