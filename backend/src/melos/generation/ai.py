@@ -19,8 +19,18 @@ from melos.domain.generator import GenerationRequest
 from melos.domain.gm import GM_PROGRAM_NAMES, is_percussion_name, program_for_name
 from melos.domain.lyrics import LyricsSpec, closest_by_syllables, syllable_key
 from melos.domain.models import SOUND_EFFECT_PROGRAMS, Song
+from melos.domain.progress import (
+    ProgressEvent,
+    ProgressReporter,
+    bind_progress,
+    report_progress,
+    reset_progress,
+)
 from melos.generation.contract import CompactSong, CompactTrack, to_song
 from melos.generation.meta import MetaResolver, ResolvedMeta
+
+# Shared with progress events (attempt / max_attempts on validation_retry).
+_OUTPUT_RETRIES = 3
 
 _INSTRUCTIONS = (
     "You are Melos, a music composer. Compose an original multi-track song and "
@@ -256,7 +266,7 @@ class PydanticAISongGenerator:
             output_type=output_type,
             instructions=_INSTRUCTIONS,
             deps_type=Constraints,
-            retries={"output": 3},
+            retries={"output": _OUTPUT_RETRIES},
             model_settings=model_settings,
         )
         self._meta_resolver = meta_resolver
@@ -269,6 +279,15 @@ class PydanticAISongGenerator:
             if problems:
                 ctx.deps.last_rejection = problems
                 ctx.deps.last_rejection_attempt = ctx.retry
+                await report_progress(
+                    ProgressEvent(
+                        phase="validation_retry",
+                        message="Constraint check failed; regenerating",
+                        attempt=ctx.retry + 1,
+                        max_attempts=_OUTPUT_RETRIES,
+                        reasons=list(problems),
+                    )
+                )
                 raise ModelRetry(
                     "Regenerate the complete song fixing these violations:\n- "
                     + "\n- ".join(problems)
@@ -276,41 +295,118 @@ class PydanticAISongGenerator:
             try:
                 to_song(compact, allow_sound_effects=ctx.deps.allow_sound_effects)
             except ValidationError as error:
-                ctx.deps.last_rejection = [
+                reasons = [
                     f"{'.'.join(str(p) for p in err['loc']) or 'song'}: {err['msg']}"
                     for err in error.errors()
                 ]
+                ctx.deps.last_rejection = reasons
                 ctx.deps.last_rejection_attempt = ctx.retry
+                await report_progress(
+                    ProgressEvent(
+                        phase="validation_retry",
+                        message="Domain validation failed; regenerating",
+                        attempt=ctx.retry + 1,
+                        max_attempts=_OUTPUT_RETRIES,
+                        reasons=reasons,
+                    )
+                )
                 raise ModelRetry(
                     f"Regenerate the complete song; it failed validation:\n{error}"
                 ) from error
             ctx.deps.last_rejection = []
             return compact
 
-    async def generate(self, request: GenerationRequest) -> Song:
-        meta = await self._meta_resolver.resolve(request)
-        constraints = Constraints.from_request(request, meta)
+    async def generate(
+        self,
+        request: GenerationRequest,
+        *,
+        progress: ProgressReporter | None = None,
+    ) -> Song:
+        token = bind_progress(progress)
         try:
-            result = await self._agent.run(
-                _user_message(request, constraints), deps=constraints
+            return await self._generate(request)
+        finally:
+            reset_progress(token)
+
+    async def _generate(self, request: GenerationRequest) -> Song:
+        await report_progress(
+            ProgressEvent(
+                phase="request_received",
+                message="Generation request accepted",
             )
-        except UnexpectedModelBehavior as error:
-            # Say what the model kept getting wrong. Without this the user sees
-            # only "exceeded maximum output retries", which is unactionable —
-            # for them and for anyone debugging a report of it. The attempt
-            # number is included because the retry budget is shared with
-            # non-validator retry paths, so this rejection is not guaranteed
-            # to be from the attempt that actually exhausted the budget.
-            if constraints.last_rejection:
-                attempt = constraints.last_rejection_attempt + 1
-                note = f"Last rejection (attempt {attempt}): " + "; ".join(
-                    constraints.last_rejection
-                )
-                raise UnexpectedModelBehavior(f"{error} {note}") from error
-            raise
-        return to_song(
-            result.output, allow_sound_effects=constraints.allow_sound_effects
         )
+        try:
+            meta = await self._resolve_meta(request)
+            constraints = Constraints.from_request(request, meta)
+            await report_progress(
+                ProgressEvent(
+                    phase="generation_started",
+                    message="Composing multi-track arrangement",
+                )
+            )
+            try:
+                result = await self._agent.run(
+                    _user_message(request, constraints), deps=constraints
+                )
+            except UnexpectedModelBehavior as error:
+                # Say what the model kept getting wrong. Without this the user sees
+                # only "exceeded maximum output retries", which is unactionable —
+                # for them and for anyone debugging a report of it. The attempt
+                # number is included because the retry budget is shared with
+                # non-validator retry paths, so this rejection is not guaranteed
+                # to be from the attempt that actually exhausted the budget.
+                if constraints.last_rejection:
+                    attempt = constraints.last_rejection_attempt + 1
+                    note = f"Last rejection (attempt {attempt}): " + "; ".join(
+                        constraints.last_rejection
+                    )
+                    raise UnexpectedModelBehavior(f"{error} {note}") from error
+                raise
+            song = to_song(
+                result.output, allow_sound_effects=constraints.allow_sound_effects
+            )
+            await report_progress(
+                ProgressEvent(
+                    phase="generation_completed",
+                    message="Arrangement validated",
+                )
+            )
+            return song
+        except Exception as error:
+            await report_progress(ProgressEvent(phase="failed", message=str(error)))
+            raise
+
+    async def _resolve_meta(self, request: GenerationRequest) -> ResolvedMeta:
+        user_complete = (
+            request.tempo_bpm is not None
+            and request.key is not None
+            and request.time_signature is not None
+        )
+        if user_complete:
+            await report_progress(
+                ProgressEvent(
+                    phase="meta_skipped",
+                    message="Using supplied tempo, key, and time signature",
+                )
+            )
+            return await self._meta_resolver.resolve(request)
+
+        await report_progress(
+            ProgressEvent(
+                phase="meta_started",
+                message="Resolving tempo, key, and time signature",
+            )
+        )
+        meta = await self._meta_resolver.resolve(request)
+        ts = meta.time_signature
+        sig = f"{ts.numerator}/{ts.denominator}"
+        await report_progress(
+            ProgressEvent(
+                phase="meta_completed",
+                message=f"{meta.tempo_bpm:g} BPM, {meta.key}, {sig}",
+            )
+        )
+        return meta
 
 
 def _user_message(request: GenerationRequest, constraints: Constraints) -> str:

@@ -28,6 +28,13 @@ from melos.domain.models import (
     TimeSignature,
     Track,
 )
+from melos.domain.progress import (
+    ProgressEvent,
+    ProgressReporter,
+    bind_progress,
+    report_progress,
+    reset_progress,
+)
 
 _LYRIC_SYLLABLES = ["Me", "los", "sings", "a", "lit", "tle", "song", "now"]
 _MELODY_PITCHES = [60, 62, 64, 65, 67, 65, 64, 60]  # C major run
@@ -38,7 +45,51 @@ _DEFAULT_BASS_PROGRAM = 33  # fingered electric bass
 
 
 class StubSongGenerator:
-    async def generate(self, request: GenerationRequest) -> Song:
+    async def generate(
+        self,
+        request: GenerationRequest,
+        *,
+        progress: ProgressReporter | None = None,
+    ) -> Song:
+        token = bind_progress(progress)
+        try:
+            return await self._generate(request)
+        finally:
+            reset_progress(token)
+
+    async def _generate(self, request: GenerationRequest) -> Song:
+        await report_progress(
+            ProgressEvent(
+                phase="request_received",
+                message="Generation request accepted",
+            )
+        )
+        await report_progress(
+            ProgressEvent(
+                phase="meta_skipped",
+                message="Stub uses request meta (or defaults); no LLM",
+            )
+        )
+        await report_progress(
+            ProgressEvent(
+                phase="generation_started",
+                message="Building stub arrangement",
+            )
+        )
+        try:
+            song = self._build(request)
+        except Exception as error:
+            await report_progress(ProgressEvent(phase="failed", message=str(error)))
+            raise
+        await report_progress(
+            ProgressEvent(
+                phase="generation_completed",
+                message="Stub arrangement ready",
+            )
+        )
+        return song
+
+    def _build(self, request: GenerationRequest) -> Song:
         excluded = {
             program_for_name(name)
             for name in request.exclude_instruments
