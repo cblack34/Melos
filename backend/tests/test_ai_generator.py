@@ -108,6 +108,81 @@ async def test_persistent_violation_exhausts_retries() -> None:
 
 
 @pytest.mark.anyio
+async def test_retry_exhaustion_names_the_failing_constraint() -> None:
+    # "Exceeded maximum output retries (3)" alone is unactionable: it says
+    # nothing about which constraint the model kept missing, so a user report
+    # of it cannot be diagnosed without re-running by hand.
+    wrong_tempo: dict[str, object] = {**GOOD_COMPACT, "bpm": 120.0}
+    with pytest.raises(UnexpectedModelBehavior, match="bpm must be exactly 97"):
+        await generate(generator_returning([wrong_tempo]))
+
+
+@pytest.mark.anyio
+async def test_retry_exhaustion_reports_domain_validation_failures_too() -> None:
+    # Domain errors (raised by to_song inside the validator) must surface the
+    # same way as constraint violations, not vanish behind the generic message.
+    overlapping: dict[str, object] = {
+        **GOOD_COMPACT,
+        "tracks": [
+            {
+                "name": "Lead",
+                "prog": 53,
+                "voc": True,
+                "notes": [
+                    {"s": 0, "d": 2, "p": 62, "lyr": "La"},
+                    {"s": 1, "d": 1, "p": 64, "lyr": " la"},  # overlaps
+                ],
+            },
+            *GOOD_TRACKS,
+        ],
+    }
+    with pytest.raises(UnexpectedModelBehavior, match="not monophonic"):
+        await generate(generator_returning([overlapping]))
+
+
+@pytest.mark.anyio
+async def test_retry_exhaustion_names_the_attempt_the_rejection_came_from() -> None:
+    # pydantic-ai's output-retry budget is shared with retry paths that never
+    # reach our output validator (e.g. a tool-call payload that fails
+    # CompactSong schema validation before _enforce runs). If the exhausting
+    # attempt takes one of those paths, last_rejection can hold a stale value
+    # from an earlier attempt — the message must say which attempt it is from
+    # rather than implying it explains the exhaustion.
+    wrong_tempo: dict[str, object] = {**GOOD_COMPACT, "bpm": 120.0}
+    malformed: dict[str, object] = {"title": "incomplete"}
+    with pytest.raises(
+        UnexpectedModelBehavior, match=r"attempt 1\): bpm must be exactly 97"
+    ):
+        await generate(generator_returning([wrong_tempo, malformed]))
+
+
+@pytest.mark.anyio
+async def test_retry_exhaustion_formats_domain_validation_loc_readably() -> None:
+    # err["loc"] is a tuple; every other error path in this codebase surfaces
+    # human-readable text, so this must not leak a raw Python tuple repr.
+    overlapping: dict[str, object] = {
+        **GOOD_COMPACT,
+        "tracks": [
+            {
+                "name": "Lead",
+                "prog": 53,
+                "voc": True,
+                "notes": [
+                    {"s": 0, "d": 2, "p": 62, "lyr": "La"},
+                    {"s": 1, "d": 1, "p": 64, "lyr": " la"},  # overlaps
+                ],
+            },
+            *GOOD_TRACKS,
+        ],
+    }
+    with pytest.raises(UnexpectedModelBehavior) as excinfo:
+        await generate(generator_returning([overlapping]))
+    message = str(excinfo.value)
+    assert "song: Value error, vocal track 'Lead' is not monophonic" in message
+    assert "()" not in message
+
+
+@pytest.mark.anyio
 async def test_included_sound_effect_is_allowed() -> None:
     request = GenerationRequest.model_validate(
         {**REQUEST, "include_instruments": ["Gunshot"], "exclude_instruments": []}
