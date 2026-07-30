@@ -33,7 +33,12 @@ export default function LyricsField({ prompt, lyrics, onChange }: Props) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(buildLyricRequest({ prompt, lyrics, topic })),
-        signal: AbortSignal.timeout(300_000),
+        // The backend's lyric call sets timeout=300 in generation/llm.py, and
+        // that clock also has to cover network round-trip + request handling
+        // on top of the LLM call itself. Give real margin over the server's
+        // own timeout rather than aborting a request the server would have
+        // completed (mirrors App.tsx's generation-timeout margin).
+        signal: AbortSignal.timeout(480_000),
       })
       if (!response.ok) {
         const body = await response.json().catch(() => null)
