@@ -18,6 +18,7 @@ GOOD_TRACKS: list[dict[str, object]] = [
     {
         "name": "Flute",
         "prog": 73,
+        "voc": True,  # carries lyr, so it must be a vocal track
         "notes": [{"s": 0, "d": 1, "p": 62, "lyr": "La"}],
     },
     {"name": "Bass", "prog": 33, "notes": [{"s": 0, "d": 2, "p": 38}]},

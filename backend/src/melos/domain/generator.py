@@ -11,6 +11,7 @@ from typing import Protocol, Self
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from melos.domain.gm import is_percussion_name, program_for_name
+from melos.domain.lyrics import LyricsSpec, parse_lyrics
 from melos.domain.models import KeyName, Song, TimeSignature
 
 
@@ -23,6 +24,9 @@ class GenerationRequest(BaseModel):
     tempo_bpm: float | None = Field(default=None, ge=20, le=400)
     key: KeyName | None = None
     time_signature: TimeSignature | None = None
+    # One free-text field: [section] tags, {directives}, and sung lines.
+    # Blank means an instrumental (see domain/lyrics.py).
+    lyrics: str | None = Field(default=None, max_length=8000)
     # General MIDI instrument names (see domain/gm.py), or "drums" for the
     # percussion track. Case-insensitive.
     include_instruments: list[str] = Field(default_factory=list, max_length=8)
@@ -49,6 +53,10 @@ class GenerationRequest(BaseModel):
                 " instrument names or 'drums'"
             )
         return names
+
+    @property
+    def lyrics_spec(self) -> LyricsSpec:
+        return parse_lyrics(self.lyrics)
 
     @model_validator(mode="after")
     def _include_exclude_disjoint(self) -> Self:

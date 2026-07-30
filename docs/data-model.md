@@ -13,6 +13,22 @@ The exact field names and nesting are for the agent to finalize, but the shape m
 - **ControlChange / PitchBend** — timed expression data
 - **Generation request** — prompt, optional constraints (key, tempo, structure, lyrics direction, instrumentation)
 
+## Lyrics field
+
+One free-text field carries three things, split by delimiter:
+
+| Line form | Meaning | Verified against the generated song |
+| --- | --- | --- |
+| `[verse 1]` | section tag | yes — same names, same sequence |
+| `{soft brushed drums}` | arrangement directive | no — creative guidance passed to the model |
+| anything else | sung text | yes — one vocal track sings it complete and in order |
+
+Blank means an instrumental, not an error. Any `[text]` is a section with that literal name — no vocabulary is policed. An empty section body is an instrumental section; there is no auto-repeat, so a repeated chorus is pasted again. A malformed tag (`[verse 1` with no closer) falls through as sung text on purpose: the user hears the mistake immediately, which beats an error over a typo.
+
+Comparison ignores *how* the model split syllables — casing, punctuation, hyphens, and the leading-space word-boundary convention are all normalized, and notes without a syllable are skipped so melisma (one syllable held across several notes) is legal.
+
+**Known ceiling:** a true call-and-response, where no single voice sings every line, trips the completeness check. The upgrade path is merging lyric events across vocal tracks by tick with same-tick dedup; not built until it is needed.
+
 ## Sections
 
 Sections carry only a name and a start beat — a section ends where the next begins. Names are free text and repeats are expected (`chorus` appears several times), so sections are a **sequence, not a set**. They start at the top of the song and land on bar lines, because real arrangements change on the bar.
