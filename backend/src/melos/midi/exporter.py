@@ -16,14 +16,18 @@ from melos.domain.models import PERCUSSION_CHANNEL, Song, Track
 
 TICKS_PER_BEAT = 480
 
+# The SMF spec predates Unicode and names no encoding for meta text; mido
+# defaults to Latin-1, which cannot hold Japanese, Korean, or Cyrillic lyrics.
+# UTF-8 is what modern tooling assumes, so lyrics in any script survive export.
+CHARSET = "utf-8"
+
 # At the same tick: lyric before note_off before note_on (avoids retriggering).
 _LYRIC, _NOTE_OFF, _NOTE_ON = 0, 1, 2
 
-# mido's meta-text encoding is hard-coded to Latin-1 (mido.midifiles.meta).
-# LLM-generated titles/names/lyrics routinely contain "smart" punctuation
-# outside that charset, so map the common cases to ASCII before folding
-# accents via NFKD; anything left unencodable raises a clear domain error
-# instead of an unhandled UnicodeEncodeError from deep inside mido.
+# Files are written UTF-8 (see CHARSET) so lyrics in any script survive. Smart
+# punctuation is still normalized to ASCII: LLM-generated text is full of curly
+# quotes and em dashes, and plain equivalents render more predictably across
+# DAWs than the typographic originals.
 _SMART_PUNCTUATION = {
     "\u2018": "'",  # left single quotation mark
     "\u2019": "'",  # right single quotation mark
@@ -34,23 +38,23 @@ _SMART_PUNCTUATION = {
     "\u2026": "...",  # horizontal ellipsis
 }
 
+# Control (Cc) and format (Cf) characters \u2014 e.g. bidi overrides like U+202E \u2014
+# have no business in MIDI meta text and the old Latin-1 encode check used to
+# reject them as a side effect; UTF-8 output no longer does that for free, so
+# strip them explicitly instead of passing LLM-emitted text through unfiltered.
+_DISALLOWED_CATEGORIES = frozenset({"Cc", "Cf"})
+
 
 def _to_smf_text(text: str) -> str:
     for smart, plain in _SMART_PUNCTUATION.items():
         text = text.replace(smart, plain)
-    decomposed = unicodedata.normalize("NFKD", text)
-    folded = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
-    try:
-        folded.encode("latin-1")
-    except UnicodeEncodeError as exc:
-        raise ValueError(
-            f"{text!r} contains characters outside the MIDI file's Latin-1 charset"
-        ) from exc
-    return folded
+    return "".join(
+        ch for ch in text if unicodedata.category(ch) not in _DISALLOWED_CATEGORIES
+    )
 
 
 def export_song(song: Song) -> bytes:
-    midi = MidiFile(type=1, ticks_per_beat=TICKS_PER_BEAT)
+    midi = MidiFile(type=1, ticks_per_beat=TICKS_PER_BEAT, charset=CHARSET)
     midi.tracks.append(_meta_track(song))
     for track, channel in zip(song.tracks, _channels(song.tracks), strict=True):
         midi.tracks.append(_midi_track(track, channel))
@@ -67,7 +71,7 @@ def _channels(tracks: list[Track]) -> list[int]:
 
 
 def _meta_track(song: Song) -> MidiTrack:
-    return MidiTrack(
+    track = MidiTrack(
         [
             MetaMessage("track_name", name=_to_smf_text(song.title), time=0),
             # tempo_bpm is quarter-note BPM; do not pass song.time_signature here —
@@ -83,6 +87,18 @@ def _meta_track(song: Song) -> MidiTrack:
             MetaMessage("key_signature", key=song.key, time=0),
         ]
     )
+    # Section markers are the only timed events here, and Song guarantees they
+    # are ordered, so deltas accumulate from the tick-0 meta above.
+    previous_tick = 0
+    for section in song.sections:
+        tick = _tick(section.start_beat)
+        track.append(
+            MetaMessage(
+                "marker", text=_to_smf_text(section.name), time=tick - previous_tick
+            )
+        )
+        previous_tick = tick
+    return track
 
 
 def _midi_track(track: Track, channel: int) -> MidiTrack:

@@ -5,7 +5,7 @@ import pytest
 from mido import MidiFile
 
 from melos.domain.models import Note, Song, TimeSignature, Track
-from melos.midi.exporter import export_song
+from melos.midi.exporter import CHARSET, export_song
 
 
 def make_song() -> Song:
@@ -41,7 +41,7 @@ def make_song() -> Song:
 
 
 def parse(data: bytes) -> MidiFile:
-    return MidiFile(file=BytesIO(data))
+    return MidiFile(file=BytesIO(data), charset=CHARSET)
 
 
 def test_round_trip_structure() -> None:
@@ -115,16 +115,17 @@ def test_smart_punctuation_in_lyric_is_normalized_not_crashed() -> None:
     assert lyrics[0] == "don't-stop"
 
 
-def test_accented_title_is_folded_to_latin1() -> None:
+def test_accents_survive_export() -> None:
     song = make_song()
     song.title = "Café Session"
     midi = parse(export_song(song))
     track_name = next(msg for msg in midi.tracks[0] if msg.type == "track_name")
-    assert track_name.name == "Cafe Session"
+    assert track_name.name == "Café Session"
 
 
-def test_non_latin1_lyric_raises_clear_value_error() -> None:
+@pytest.mark.parametrize("lyric", ["日本", "Привет", "안녕"])
+def test_non_latin_script_lyrics_round_trip(lyric: str) -> None:
     song = make_song()
-    song.tracks[0].notes[0].lyric = "日本"  # outside Latin-1, no ASCII fallback
-    with pytest.raises(ValueError, match="Latin-1"):
-        export_song(song)
+    song.tracks[0].notes[0].lyric = lyric
+    midi = parse(export_song(song))
+    assert next(m.text for m in midi.tracks[1] if m.type == "lyrics") == lyric

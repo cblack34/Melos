@@ -68,8 +68,10 @@ def create_app(generator: SongGenerator | None = None) -> FastAPI:
             # revisit with asyncio.to_thread if profiling ever shows otherwise.
             content = export_song(song)
         except ValueError as error:
-            # e.g. an LLM-generated title/name/lyric outside the MIDI file's
-            # Latin-1 charset that the exporter's folding couldn't fix.
+            # Defensive: export_song is UTF-8 end to end and no longer raises
+            # ValueError for any Song that passed domain validation, but the
+            # domain/export boundary is exactly where an encoding assumption
+            # would surface first if that ever changed.
             raise HTTPException(
                 status_code=502, detail=f"song could not be exported: {error}"
             ) from error
@@ -89,4 +91,6 @@ def _filename(title: str) -> str:
     return f"{slug}.mid"
 
 
-app = create_app()
+# No module-level `app`: building the generator (and its provider client) at
+# import time is a side effect that fires on any import, including test
+# collection. Served via `uvicorn --factory melos.api.app:create_app`.
