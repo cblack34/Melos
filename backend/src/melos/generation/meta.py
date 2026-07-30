@@ -9,6 +9,7 @@ LLM call happens at all.
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai import Agent, NativeOutput
 from pydantic_ai.models import Model
+from pydantic_ai.settings import ModelSettings
 
 from melos.domain.generator import GenerationRequest
 from melos.domain.models import KeyName, TimeSignature
@@ -33,7 +34,13 @@ class ResolvedMeta(BaseModel):
 
 
 class MetaResolver:
-    def __init__(self, model: Model, *, use_native_output: bool) -> None:
+    def __init__(
+        self,
+        model: Model,
+        *,
+        use_native_output: bool,
+        model_settings: ModelSettings | None = None,
+    ) -> None:
         # Ollama (local) enforces json_schema natively; ToolOutput is the
         # portable default elsewhere (see docs/tech-stack.md).
         output_type = NativeOutput(ResolvedMeta) if use_native_output else ResolvedMeta
@@ -42,6 +49,7 @@ class MetaResolver:
             output_type=output_type,
             instructions=_INSTRUCTIONS,
             retries={"output": 2},
+            model_settings=model_settings,
         )
 
     async def resolve(self, request: GenerationRequest) -> ResolvedMeta:

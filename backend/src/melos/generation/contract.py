@@ -26,7 +26,14 @@ _TIME_SIGNATURE_REGEX = r"^[0-9]{1,2}/(?:1|2|4|8|16|32)$"
 # they keep a hallucinating model from emitting unbounded payloads or beat
 # positions that overflow MIDI's variable-length delta encoding.
 _MAX_BEAT = 10_000.0  # ~83 min (1.4 h) at 120 BPM; far beyond any real song
-_MAX_NOTES_PER_TRACK = 5_000
+# 1000 is the empirical ceiling for llama.cpp's json_schema->grammar
+# conversion (maxItems=5000 fails with "failed to parse grammar"). This is a
+# safety ceiling against a hallucinating/runaway model, not a target size:
+# one track at this cap already needs ~22k tokens (measured), well over
+# generation_model_settings' max_tokens=16_000 (llm.py) — a generation that
+# approaches this cap will exhaust its output retries rather than produce
+# ~8 minutes of music.
+_MAX_NOTES_PER_TRACK = 1_000
 _MAX_TRACKS = 16  # MIDI channel count; domain rules tighten this further
 
 
