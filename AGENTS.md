@@ -27,6 +27,7 @@ uv run pytest
 # frontend — run from frontend/ (typecheck = tsc -b --noEmit)
 npm run lint
 npm run typecheck
+npm run test
 npm run build
 # PR review must come back clean
 ```

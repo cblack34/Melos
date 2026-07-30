@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { buildGenerationRequest, filenameFrom } from './api'
 import './App.css'
 
 const KEYS = [
@@ -7,34 +8,6 @@ const KEYS = [
   'Ebm', 'Abm',
 ]
 const TIME_SIGNATURES = ['4/4', '3/4', '6/8', '2/4', '12/8']
-
-function filenameFrom(response: Response): string {
-  const disposition = response.headers.get('content-disposition')
-  return disposition?.match(/filename="([^"]+)"/)?.[1] ?? 'song.mid'
-}
-
-interface GenerationFormValues {
-  prompt: string
-  tempo: string
-  key: string
-  timeSignature: string
-}
-
-function buildGenerationRequest({
-  prompt,
-  tempo,
-  key,
-  timeSignature,
-}: GenerationFormValues): Record<string, unknown> {
-  const body: Record<string, unknown> = { prompt }
-  if (tempo) body.tempo_bpm = Number(tempo)
-  if (key) body.key = key
-  if (timeSignature) {
-    const [numerator, denominator] = timeSignature.split('/').map(Number)
-    body.time_signature = { numerator, denominator }
-  }
-  return body
-}
 
 function download(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
