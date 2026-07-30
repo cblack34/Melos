@@ -82,7 +82,7 @@
 .melos .hint {
   margin: 0;
   font-size: 0.8125rem;
-  opacity: 0.7;
+  opacity: 0.9;
 }
 
 .melos .hint code {
@@ -107,6 +107,14 @@
   padding: 0.75rem;
   border: 1px solid var(--border, #ccc);
   border-radius: 0.5rem;
+}
+
+/* Kept mounted (not conditionally rendered) so aria-controls always points
+   at a real node; the [hidden] attribute toggles visibility instead. Needs
+   this explicit override since .composer's own `display: flex` otherwise
+   wins over the UA stylesheet's `[hidden] { display: none }`. */
+.melos .composer[hidden] {
+  display: none;
 }
 
 /* Scrollable row rather than a wrapping grid: chips are shortcuts, so running

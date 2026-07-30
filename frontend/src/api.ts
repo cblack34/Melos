@@ -57,7 +57,12 @@ export function errorMessageFrom(status: number, body: unknown): string {
   const detail = (body as { detail?: unknown } | null)?.detail
   if (Array.isArray(detail)) {
     const messages = detail
-      .map((entry) => (entry as { msg?: string }).msg)
+      .map((entry) => {
+        const { msg, loc } = entry as { msg?: string; loc?: unknown[] }
+        if (!msg) return undefined
+        const field = Array.isArray(loc) ? loc[loc.length - 1] : undefined
+        return typeof field === 'string' ? `${field}: ${msg}` : msg
+      })
       .filter((msg): msg is string => Boolean(msg))
     if (messages.length) return messages.join('; ')
   }

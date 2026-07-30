@@ -10,8 +10,11 @@ Usage: uv run python scripts/quality_run.py [--out DIR] [--cases N]
 
 import argparse
 import asyncio
+import difflib
 import functools
+import re
 import time
+import unicodedata
 from io import BytesIO
 from pathlib import Path
 
@@ -79,12 +82,29 @@ CASES: list[tuple[str, dict[str, object]]] = [
             "lyrics": "[verse 1]\nさくらが咲く\n[chorus]\n君を思う\n",
         },
     ),
+    (
+        "structure-only-no-lyrics",
+        {
+            "prompt": "an instrumental post-rock build",
+            "tempo_bpm": 100,
+            "lyrics": (
+                "[intro]\n"
+                "{just guitar}\n"
+                "[build]\n"
+                "{add drums and bass}\n"
+                "[climax]\n"
+                "{full band}\n"
+            ),
+        },
+    ),
 ]
 
 
 def check_case(request: GenerationRequest, data: bytes) -> list[str]:
     failures: list[str] = []
-    midi = mido.MidiFile(file=BytesIO(data))
+    # charset must match exporter.py's CHARSET ("utf-8"); mido's own default
+    # ("latin1") mangles any non-Latin-1 lyric/marker text on read-back.
+    midi = mido.MidiFile(file=BytesIO(data), charset="utf-8")
     meta = {msg.type: msg for msg in midi.tracks[0]}
     instrument_tracks = midi.tracks[1:]
 
@@ -135,30 +155,70 @@ def check_case(request: GenerationRequest, data: bytes) -> list[str]:
         failures.append(f"invalid GM programs: {invalid}")
 
     spec = request.lyrics_spec
+    markers = [msg.text for msg in midi.tracks[0] if msg.type == "marker"]
     if spec.section_names:
-        markers = [msg.text for msg in midi.tracks[0] if msg.type == "marker"]
         if [name.casefold() for name in markers] != [
             name.casefold() for name in spec.section_names
         ]:
             failures.append(f"markers {markers} != requested {spec.section_names}")
+    elif markers:
+        failures.append(
+            f"unexpected section markers with no sections requested: {markers}"
+        )
     if spec.has_lyrics or "sung" in request.prompt:
         _lyrics_aligned(instrument_tracks, failures)
     if spec.has_lyrics:
-        sung = _sung_syllables(instrument_tracks)
+        sung = _sung_syllables(instrument_tracks, spec.sung_text)
         if syllable_key(sung) != syllable_key(spec.sung_text):
             failures.append(f"sung {sung[:80]!r} != requested {spec.sung_text[:80]!r}")
+        sung_boundary = _boundary_key(sung)
         for tag in spec.section_names:
-            if syllable_key(tag) and syllable_key(tag) in syllable_key(sung):
+            tag_boundary = _boundary_key(tag)
+            if tag_boundary and re.search(
+                rf"\b{re.escape(tag_boundary)}\b", sung_boundary
+            ):
                 failures.append(f"section tag {tag!r} was sung")
     return failures
 
 
-def _sung_syllables(tracks: list[mido.MidiTrack]) -> str:
-    """Syllables from the one track that carries the most of them (the lead)."""
+def _boundary_key(text: str) -> str:
+    """Like ``syllable_key``, but keeps word breaks so ``\\b`` matching works.
+
+    ``syllable_key`` strips all whitespace, which turns a "was this section
+    tag sung" check into an unbounded substring test (e.g. "verse" would
+    match inside "universe"). This keeps spaces so a regex word-boundary
+    match only fires on the whole word.
+    """
+    normalized = unicodedata.normalize("NFC", text).casefold()
+    return "".join(
+        ch for ch in normalized if not unicodedata.category(ch).startswith("P")
+    )
+
+
+def _sung_syllables(tracks: list[mido.MidiTrack], wanted: str) -> str:
+    """Syllables from the track whose text best matches what was requested.
+
+    Multiple vocal tracks may legitimately carry ``lyr`` (harmony parts get
+    their own track too, per ``ai.py``'s generation-time rules), so picking
+    the "lead" by raw character count can pick a harmony track instead.
+    Match by content — mirroring how ``ai.py``'s own ``_lyric_problems``
+    identifies the closest singer — rather than by length.
+    """
     per_track = [
         "".join(msg.text for msg in track if msg.type == "lyrics") for track in tracks
     ]
-    return max(per_track, key=len, default="")
+    if not per_track:
+        return ""
+    wanted_key = syllable_key(wanted)
+    exact = [sung for sung in per_track if syllable_key(sung) == wanted_key]
+    if exact:
+        return exact[0]
+    return max(
+        per_track,
+        key=lambda sung: difflib.SequenceMatcher(
+            None, syllable_key(sung), wanted_key
+        ).ratio(),
+    )
 
 
 def _lyrics_aligned(tracks: list[mido.MidiTrack], failures: list[str]) -> bool:

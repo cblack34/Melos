@@ -80,6 +80,10 @@ describe('buildLyricRequest', () => {
       topic: 'x',
     })
   })
+
+  it('returns an empty body when everything is blank', () => {
+    expect(buildLyricRequest({ prompt: '  ', lyrics: '\n', topic: '' })).toEqual({})
+  })
 })
 
 describe('errorMessageFrom', () => {
@@ -98,6 +102,22 @@ describe('errorMessageFrom', () => {
     expect(errorMessageFrom(500, null)).toBe('Request failed (HTTP 500)')
     expect(errorMessageFrom(500, { detail: [] })).toBe('Request failed (HTTP 500)')
     expect(errorMessageFrom(500, { detail: '' })).toBe('Request failed (HTTP 500)')
+    expect(errorMessageFrom(500, { detail: [{ loc: ['body', 'topic'] }] })).toBe(
+      'Request failed (HTTP 500)',
+    )
+  })
+
+  it('prefixes the field name when validation errors include a loc', () => {
+    const body = { detail: [{ msg: 'String should have at most 1000 characters', loc: ['body', 'topic'] }] }
+    expect(errorMessageFrom(422, body)).toBe(
+      'topic: String should have at most 1000 characters',
+    )
+  })
+
+  it('drops entries without a usable message but keeps the rest', () => {
+    expect(
+      errorMessageFrom(422, { detail: [{ msg: 'too short' }, { loc: ['body'] }] }),
+    ).toBe('too short')
   })
 })
 

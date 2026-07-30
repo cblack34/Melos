@@ -39,8 +39,15 @@ export default function LyricsField({ prompt, lyrics, onChange }: Props) {
         const body = await response.json().catch(() => null)
         throw new Error(errorMessageFrom(response.status, body))
       }
-      const written = (await response.json()) as { lyrics: string }
-      onChange(written.lyrics)
+      const written: unknown = await response.json()
+      if (
+        !written ||
+        typeof written !== 'object' ||
+        typeof (written as { lyrics?: unknown }).lyrics !== 'string'
+      ) {
+        throw new Error('Unexpected response from the lyrics API')
+      }
+      onChange((written as { lyrics: string }).lyrics)
       setComposerOpen(false)
       setTopic('')
     } catch (err) {
@@ -59,6 +66,7 @@ export default function LyricsField({ prompt, lyrics, onChange }: Props) {
         onChange={(e) => onChange(e.target.value)}
         placeholder={'Start writing lyrics…\n\n[verse 1]\n{soft brushed drums}'}
         rows={10}
+        maxLength={8000}
       />
       <p className="hint">
         <code>[verse 1]</code> names a section, <code>{'{soft drums}'}</code> is a note
@@ -72,50 +80,57 @@ export default function LyricsField({ prompt, lyrics, onChange }: Props) {
         className="ghost"
         aria-expanded={composerOpen}
         aria-controls="lyric-composer"
-        onClick={() => setComposerOpen((open) => !open)}
+        disabled={busy}
+        onClick={() => {
+          setComposerOpen((open) => !open)
+          setError(null)
+        }}
       >
-        ✦ Help me write lyrics
+        <span aria-hidden="true">✦</span> Help me write lyrics
       </button>
 
-      {composerOpen && (
-        <div id="lyric-composer" className="composer">
-          <div className="chips">
-            {TOPIC_CHIPS.map((chip) => (
-              <button
-                type="button"
-                key={chip}
-                className="chip"
-                onClick={() => setTopic(chip)}
-              >
-                {chip}
-              </button>
-            ))}
-          </div>
-          <div className="composer-input">
-            <input
-              type="text"
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              placeholder="What should it be about?"
-              aria-label="What the lyrics should be about"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void write(e)
-              }}
-            />
-            <button type="button" onClick={write} disabled={busy}>
-              {busy ? 'Writing…' : 'Write'}
+      <div id="lyric-composer" className="composer" hidden={!composerOpen}>
+        <div className="chips">
+          {TOPIC_CHIPS.map((chip) => (
+            <button
+              type="button"
+              key={chip}
+              className="chip"
+              onClick={() => setTopic(chip)}
+            >
+              {chip}
             </button>
-          </div>
-          {lyrics.trim() && (
-            <p className="hint">Your existing lyrics are kept and built on.</p>
-          )}
-          {error && (
-            <p role="alert" className="error">
-              {error}
-            </p>
-          )}
+          ))}
         </div>
-      )}
+        <div className="composer-input">
+          <input
+            type="text"
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            placeholder="What should it be about?"
+            aria-label="What the lyrics should be about"
+            maxLength={1000}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !busy && !e.nativeEvent.isComposing) void write(e)
+            }}
+          />
+          <button
+            type="button"
+            onClick={write}
+            disabled={busy || (!prompt.trim() && !lyrics.trim() && !topic.trim())}
+          >
+            {busy ? 'Writing…' : 'Write'}
+          </button>
+        </div>
+        {lyrics.trim() && (
+          <p className="hint">Your existing lyrics are kept and built on.</p>
+        )}
+        {error && (
+          <p role="alert" className="error">
+            {error}
+          </p>
+        )}
+      </div>
     </div>
   )
 }
