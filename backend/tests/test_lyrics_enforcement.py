@@ -16,7 +16,12 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from melos.domain.generator import GenerationRequest
 from melos.domain.models import Song, TimeSignature
-from melos.generation.ai import Constraints, PydanticAISongGenerator
+from melos.generation import ai
+from melos.generation.ai import (
+    ENFORCE_LYRIC_COMPLETENESS,
+    Constraints,
+    PydanticAISongGenerator,
+)
 from melos.generation.contract import CompactSong
 from melos.generation.meta import MetaResolver, ResolvedMeta
 from melos.midi.exporter import CHARSET, export_song
@@ -160,7 +165,14 @@ async def test_missing_vocal_track_is_retried() -> None:
 
 
 @pytest.mark.anyio
-async def test_wrong_words_are_retried() -> None:
+async def test_incomplete_words_are_currently_accepted() -> None:
+    """Completeness is DEFERRED to per-section generation (issue #39).
+
+    One-shot generation cannot reproduce a real song's lyrics — measured 72% of
+    404 words — so ``ENFORCE_LYRIC_COMPLETENESS`` is off and partial lyrics pass
+    through unflagged. Invert this test (back to "retried until fixed") when
+    per-section generation turns the flag on.
+    """
     wrong = compact(
         tracks=[
             {
@@ -173,12 +185,46 @@ async def test_wrong_words_are_retried() -> None:
         ]
     )
     calls: list[str] = []
-    await generate([wrong, compact()], calls)
-    assert len(calls) == 2
+    song = await generate([wrong], calls)
+    assert not ENFORCE_LYRIC_COMPLETENESS
+    assert len(calls) == 1  # accepted first time, no retry
+    assert song.tracks[0].notes[0].lyric == "something else"
 
 
 @pytest.mark.anyio
-async def test_persistently_wrong_words_exhaust_retries() -> None:
+async def test_wrong_words_are_retried_once_completeness_is_enforced(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The completeness machinery still works — only the flag is off.
+
+    Keeps the M3 behavior covered so re-enabling is a one-line change rather
+    than a rediscovery of what the check was supposed to do.
+    """
+    monkeypatch.setattr(ai, "ENFORCE_LYRIC_COMPLETENESS", True)
+    wrong = compact(
+        tracks=[
+            {
+                "name": "Lead Vocal",
+                "prog": 53,
+                "voc": True,
+                "notes": [{"s": 0, "d": 1, "p": 60, "lyr": "something else"}],
+            },
+            {"name": "Bass", "prog": 33, "notes": [{"s": 0, "d": 8, "p": 40}]},
+        ]
+    )
+    calls: list[str] = []
+    song = await generate([wrong, compact()], calls)
+    assert len(calls) == 2  # rejected, then corrected
+    assert song.tracks[0].notes[0].lyric == "Car"
+
+
+@pytest.mark.anyio
+async def test_persistently_wrong_words_exhaust_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The 502 path this produced for a full song is exactly why completeness is
+    # deferred (issue #39); pinned under the flag so M3 inherits the coverage.
+    monkeypatch.setattr(ai, "ENFORCE_LYRIC_COMPLETENESS", True)
     wrong = compact(
         tracks=[
             {
@@ -277,10 +323,16 @@ async def test_instrumental_request_needs_no_vocals() -> None:
     assert not any(track.is_vocal for track in song.tracks)
 
 
-def test_closest_singer_is_picked_by_similarity_not_length() -> None:
+def test_closest_singer_is_picked_by_similarity_not_length(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The retry feedback must name the track that's actually closest to the
     wanted lyrics, not whichever vocal track happens to have more characters.
+
+    Under the completeness flag (deferred — issue #39), so the feedback quality
+    stays covered for when per-section generation switches it on.
     """
+    monkeypatch.setattr(ai, "ENFORCE_LYRIC_COMPLETENESS", True)
     request = GenerationRequest.model_validate(
         {"prompt": "a song", "lyrics": "Carry me home tonight"}
     )

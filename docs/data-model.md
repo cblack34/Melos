@@ -27,9 +27,11 @@ Blank means an instrumental, not an error. Any `[text]` is a section with that l
 
 Comparison ignores *how* the model split syllables — casing, punctuation, hyphens, and the leading-space word-boundary convention are all normalized, and notes without a syllable are skipped so melisma (one syllable held across several notes) is legal.
 
+> **Current limitation (deferred to per-section generation — issue #39).** Lyric *completeness* is not enforced right now: a generated song may sing only part of the supplied words, with no warning. One-shot generation cannot reproduce a real song's lyrics — measured on a 404-word request, the model emitted every section correctly but sang 72% of the words, thinning the repeated choruses. Enforcing completeness turned that into a 502 after three retries, so the check is off (`ENFORCE_LYRIC_COMPLETENESS` in `generation/ai.py`) until sections are generated one call at a time, where each check covers ~40 words and is reliable. Every other lyric rule below still holds.
+
 Supplied lyrics are reproduced **glyph for glyph**: the model may split them across notes but must not transliterate, romanize, or respell them. This matters for non-phonetic scripts — a model asked to sing 咲く will happily emit さく, which is the same sound but no longer the words the user typed, and a DAW should show the lyric sheet as written.
 
-**Known ceiling:** a true call-and-response, where no single voice sings every line, trips the completeness check. The upgrade path is merging lyric events across vocal tracks by tick with same-tick dedup; not built until it is needed.
+**Known ceiling (applies once completeness enforcement is back on):** a true call-and-response, where no single voice sings every line, would trip the completeness check. The upgrade path is merging lyric events across vocal tracks by tick with same-tick dedup; not built until it is needed.
 
 **Known tradeoff:** normalizing away word-split noise (whitespace, hyphens, underscores) is *all-or-nothing* — it also erases the boundary between "space = new word" and "space = a sloppy mid-word split," so two different sentences that happen to share letters can compare equal (e.g. "an ice cream" and "a nice cream" both normalize to `anicecream`). This is accepted, not accidental: the normalization is required for the model to legally represent a syllable split like `lov` + `er` as one word. Tightening it would need a per-note signal (e.g. an explicit new-word marker) rather than a purely textual comparison; not built until the false-pass rate in practice justifies it.
 
