@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 from pydantic_ai.exceptions import UserError
 from pydantic_ai.models.ollama import OllamaModel
 from pydantic_ai.models.openrouter import OpenRouterModel
@@ -8,6 +9,7 @@ from melos.generation.llm import (
     generation_model,
     generation_model_settings,
     is_cloud_model,
+    lyric_model,
     meta_model,
     meta_model_settings,
     supports_native_output,
@@ -32,23 +34,56 @@ def test_openrouter_provider_selected_by_env(
     monkeypatch.setenv("MELOS_LLM_PROVIDER", "openrouter")
     monkeypatch.setenv("MELOS_GENERATION_MODEL", "anthropic/claude-sonnet-5")
     monkeypatch.setenv("MELOS_META_MODEL", "openai/gpt-5-nano")
+    monkeypatch.setenv("MELOS_LYRIC_MODEL", "anthropic/claude-sonnet-5")
     config = LlmSettings(_env_file=None)
     model = generation_model(config)
     assert isinstance(model, OpenRouterModel)
     assert model.model_name == "anthropic/claude-sonnet-5"
 
 
-def test_meta_model_selected_by_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_per_task_models_selected_by_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     config = LlmSettings(
         _env_file=None,
         llm_provider="openrouter",
         generation_model="anthropic/claude-sonnet-5",
         meta_model="openai/gpt-5-nano",
+        lyric_model="anthropic/claude-opus-5",
     )
-    model = meta_model(config)
-    assert isinstance(model, OpenRouterModel)
-    assert model.model_name == "openai/gpt-5-nano"
+    assert meta_model(config).model_name == "openai/gpt-5-nano"
+    lyric = lyric_model(config)
+    assert isinstance(lyric, OpenRouterModel)
+    assert lyric.model_name == "anthropic/claude-opus-5"
+
+
+def test_openrouter_rejects_a_bare_lyric_model_id() -> None:
+    # Every per-task model must be a provider/model id on OpenRouter, not just
+    # the two that existed before lyric writing.
+    with pytest.raises(ValidationError, match="lyric_model"):
+        LlmSettings(
+            _env_file=None,
+            llm_provider="openrouter",
+            generation_model="anthropic/claude-sonnet-5",
+            meta_model="openai/gpt-5-nano",
+            lyric_model="qwen3.6:27b",
+        )
+
+
+def test_openrouter_bare_model_error_names_all_three_env_vars() -> None:
+    # The remediation hint must name every per-task env var, including the
+    # one that actually failed -- a `match="lyric_model"` assertion alone
+    # would also match the unrelated "lyric_model=..." prefix.
+    with pytest.raises(
+        ValidationError,
+        match="MELOS_GENERATION_MODEL, MELOS_META_MODEL, and MELOS_LYRIC_MODEL",
+    ):
+        LlmSettings(
+            _env_file=None,
+            llm_provider="openrouter",
+            generation_model="anthropic/claude-sonnet-5",
+            meta_model="openai/gpt-5-nano",
+            lyric_model="qwen3.6:27b",
+        )
 
 
 def test_ollama_base_url_is_configurable() -> None:
@@ -73,6 +108,7 @@ def test_openrouter_without_api_key_raises(monkeypatch: pytest.MonkeyPatch) -> N
         llm_provider="openrouter",
         generation_model="openai/gpt-5-nano",
         meta_model="openai/gpt-5-nano",
+        lyric_model="openai/gpt-5-nano",
     )
     with pytest.raises(UserError):
         generation_model(config)
