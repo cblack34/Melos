@@ -81,11 +81,17 @@ class Constraints(BaseModel):
     forbid_percussion: bool
     allow_sound_effects: bool
     lyrics: LyricsSpec
-    # Why the last attempt was rejected. A Constraints is built per request, so
-    # this is per-run scratch space, and it is the only record of *which*
-    # constraint the model kept missing once retries run out — pydantic-ai's
-    # UnexpectedModelBehavior says only "exceeded maximum output retries".
+    # Why the last attempt *we saw* was rejected. A Constraints is built per
+    # request, so this is per-run scratch space, and it is the only record of
+    # *which* constraint the model kept missing once retries run out —
+    # pydantic-ai's UnexpectedModelBehavior says only "exceeded maximum output
+    # retries". last_rejection_attempt records which retry this came from,
+    # because pydantic-ai's output-retry budget is shared with retry paths
+    # (malformed tool args, etc.) that never reach `_enforce` — so the attempt
+    # that exhausts the budget is not necessarily the one that set
+    # last_rejection, and the message must not imply otherwise.
     last_rejection: list[str] = Field(default_factory=list)
+    last_rejection_attempt: int = -1
 
     @classmethod
     def from_request(cls, request: GenerationRequest, meta: ResolvedMeta) -> Self:
@@ -246,6 +252,7 @@ class PydanticAISongGenerator:
             problems = ctx.deps.violations(compact)
             if problems:
                 ctx.deps.last_rejection = problems
+                ctx.deps.last_rejection_attempt = ctx.retry
                 raise ModelRetry(
                     "Regenerate the complete song fixing these violations:\n- "
                     + "\n- ".join(problems)
@@ -254,8 +261,10 @@ class PydanticAISongGenerator:
                 to_song(compact, allow_sound_effects=ctx.deps.allow_sound_effects)
             except ValidationError as error:
                 ctx.deps.last_rejection = [
-                    f"{err['loc']}: {err['msg']}" for err in error.errors()
+                    f"{'.'.join(str(p) for p in err['loc']) or 'song'}: {err['msg']}"
+                    for err in error.errors()
                 ]
+                ctx.deps.last_rejection_attempt = ctx.retry
                 raise ModelRetry(
                     f"Regenerate the complete song; it failed validation:\n{error}"
                 ) from error
@@ -272,11 +281,16 @@ class PydanticAISongGenerator:
         except UnexpectedModelBehavior as error:
             # Say what the model kept getting wrong. Without this the user sees
             # only "exceeded maximum output retries", which is unactionable —
-            # for them and for anyone debugging a report of it.
+            # for them and for anyone debugging a report of it. The attempt
+            # number is included because the retry budget is shared with
+            # non-validator retry paths, so this rejection is not guaranteed
+            # to be from the attempt that actually exhausted the budget.
             if constraints.last_rejection:
-                raise UnexpectedModelBehavior(
-                    f"{error} Last rejection: " + "; ".join(constraints.last_rejection)
-                ) from error
+                attempt = constraints.last_rejection_attempt + 1
+                note = f"Last rejection (attempt {attempt}): " + "; ".join(
+                    constraints.last_rejection
+                )
+                raise UnexpectedModelBehavior(f"{error} {note}") from error
             raise
         return to_song(
             result.output, allow_sound_effects=constraints.allow_sound_effects
