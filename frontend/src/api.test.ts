@@ -6,7 +6,15 @@ import {
   filenameFrom,
 } from './api'
 
-const EMPTY = { prompt: 'a tune', tempo: '', key: '', timeSignature: '', lyrics: '' }
+const EMPTY = {
+  prompt: 'a tune',
+  tempo: '',
+  key: '',
+  timeSignature: '',
+  lyrics: '',
+  generationModel: '',
+  metaModel: '',
+}
 
 describe('buildGenerationRequest', () => {
   it('sends only the prompt when no constraints are set', () => {
@@ -36,6 +44,8 @@ describe('buildGenerationRequest', () => {
         key: 'Dm',
         timeSignature: '3/4',
         lyrics: '[verse 1]\nCarry me home',
+        generationModel: 'anthropic/claude-sonnet-5',
+        metaModel: 'openai/gpt-5-nano',
       }),
     ).toEqual({
       prompt: 'a waltz',
@@ -43,7 +53,13 @@ describe('buildGenerationRequest', () => {
       key: 'Dm',
       time_signature: { numerator: 3, denominator: 4 },
       lyrics: '[verse 1]\nCarry me home',
+      generation_model: 'anthropic/claude-sonnet-5',
+      meta_model: 'openai/gpt-5-nano',
     })
+  })
+
+  it('omits model overrides when left at the server default', () => {
+    expect(buildGenerationRequest(EMPTY)).toEqual({ prompt: 'a tune' })
   })
 
   it('omits whitespace-only lyrics so the song stays an instrumental', () => {

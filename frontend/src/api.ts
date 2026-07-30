@@ -6,6 +6,8 @@ export interface GenerationFormValues {
   key: string
   timeSignature: string
   lyrics: string
+  generationModel: string
+  metaModel: string
 }
 
 export function buildGenerationRequest({
@@ -14,6 +16,8 @@ export function buildGenerationRequest({
   key,
   timeSignature,
   lyrics,
+  generationModel,
+  metaModel,
 }: GenerationFormValues): Record<string, unknown> {
   const body: Record<string, unknown> = { prompt }
   if (tempo) body.tempo_bpm = Number(tempo)
@@ -23,7 +27,19 @@ export function buildGenerationRequest({
     body.time_signature = { numerator, denominator }
   }
   if (lyrics.trim()) body.lyrics = lyrics
+  if (generationModel) body.generation_model = generationModel
+  if (metaModel) body.meta_model = metaModel
   return body
+}
+
+export interface ModelOption {
+  id: string
+  label: string
+}
+
+export interface ModelOptions {
+  generation: ModelOption[]
+  meta: ModelOption[]
 }
 
 export interface LyricRequestValues {

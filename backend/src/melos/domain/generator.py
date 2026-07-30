@@ -38,12 +38,27 @@ class GenerationRequest(BaseModel):
     # percussion track. Case-insensitive.
     include_instruments: list[str] = Field(default_factory=list, max_length=8)
     exclude_instruments: list[str] = Field(default_factory=list, max_length=16)
+    # Per-request model override (e.g. a UI model picker). Plain ids here --
+    # membership in the model catalog is an API-layer (generation/catalog.py)
+    # concern, not a domain one; unset means "use the server's configured
+    # default". None if catalog is empty. Blank strings coerce to None so
+    # empty means unset consistently (validation uses is-not-None; resolution
+    # uses truthiness — without coercion, "" would 422 as an unknown id).
+    generation_model: str | None = Field(default=None, max_length=200)
+    meta_model: str | None = Field(default=None, max_length=200)
 
     @field_validator("prompt")
     @classmethod
     def _prompt_not_blank(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("prompt must not be blank")
+        return value
+
+    @field_validator("generation_model", "meta_model", mode="before")
+    @classmethod
+    def _blank_model_override_is_unset(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
         return value
 
     @field_validator("include_instruments", "exclude_instruments")
