@@ -77,7 +77,7 @@ export default function ActivityLog({ entries, elapsedMs, running }: Props) {
                 )}
                 {entry.event.provider_response_id && (
                   <p className="activity-generation-id">
-                    <span>Generation ID</span>
+                    <span>Provider response ID</span>
                     <code>{entry.event.provider_response_id}</code>
                   </p>
                 )}
