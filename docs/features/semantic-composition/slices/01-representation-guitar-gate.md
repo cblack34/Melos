@@ -57,7 +57,7 @@ Out of scope:
       changes, deterministic offsets, velocity contour, and canonical timing.
 - [x] A boundary-context fixture has no accidental gap, duplicate, or clipping.
 - [x] Identical inputs produce identical event data and hashes.
-- [ ] GarageBand playback evidence records the instrument and limitations.
+- [x] GarageBand playback evidence records the instrument and limitations.
 - [x] Research and feasibility evidence support one joint recommendation.
 - [ ] The full repository verification suite and independent PR review pass.
 - [ ] Human review approves the recommendation before production adoption.

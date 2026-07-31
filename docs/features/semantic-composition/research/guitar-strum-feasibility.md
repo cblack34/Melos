@@ -1,6 +1,7 @@
 # Deterministic guitar-strum feasibility
 
-> **Status: automated evidence complete; human playback judgment pending.** This
+> **Status: automated and manual evidence complete; representation approval
+> pending.** This
 > record belongs to the revisable tactical slice in
 > [`../slices/01-representation-guitar-gate.md`](../slices/01-representation-guitar-gate.md)
 > and is subordinate to the active strategic pack. The experimental types under
@@ -123,6 +124,15 @@ Environment:
 - MIDI program 25, General MIDI acoustic steel guitar
 - fixture opened successfully through macOS on 2026-07-31
 
-Human listening result: **pending**. Record whether the guitar is recognizably
-strummed and any artificial timing, velocity, sustain, voicing, or patch
-limitations before accepting the gate.
+Human listening result on 2026-07-31: **qualified feasibility pass**. The
+listener described it as a great first effort and heard recognizable strumming,
+but every stroke sounded like a down-stroke. Timing, velocity, articulation,
+and/or the General MIDI patch therefore need refinement before this recipe
+could be treated as production-quality guitar realization.
+
+The pure evidence still proves that up-strokes reverse the sounding-string
+order. The listening result shows that event order and a reversed velocity
+contour alone do not make direction perceptually distinct through this patch.
+A later production design must preserve room for direction-specific attack,
+articulation, timing, and renderer mapping; this slice does not choose those
+details.
