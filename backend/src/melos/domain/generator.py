@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from melos.domain.gm import is_percussion_name, program_for_name
 from melos.domain.lyrics import LyricsSpec, parse_lyrics, syllable_key
 from melos.domain.models import KeyName, Song, TimeSignature
+from melos.domain.progress import ProgressReporter
 
 # Kept in sync by hand with generation/contract.py's _MAX_SECTIONS and
 # CompactSection.n's max_length: domain must not import the generation layer
@@ -122,4 +123,9 @@ class GenerationRequest(BaseModel):
 
 
 class SongGenerator(Protocol):
-    async def generate(self, request: GenerationRequest) -> Song: ...
+    async def generate(
+        self,
+        request: GenerationRequest,
+        *,
+        progress: ProgressReporter | None = None,
+    ) -> Song: ...

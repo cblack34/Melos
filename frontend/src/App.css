@@ -1,8 +1,109 @@
-.melos {
-  max-width: 40rem;
+.melos-layout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2rem;
+  align-items: flex-start;
+  justify-content: center;
+  max-width: 64rem;
   margin: 4rem auto;
   padding: 0 1rem;
+}
+
+.melos {
+  flex: 1 1 22rem;
+  max-width: 40rem;
   text-align: left;
+}
+
+.activity-log {
+  flex: 0 1 18rem;
+  min-width: 14rem;
+  max-width: 22rem;
+  position: sticky;
+  top: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 0.5rem;
+  background: var(--activity-bg, color-mix(in srgb, Canvas 92%, CanvasText 8%));
+  text-align: left;
+  font-size: 0.875rem;
+}
+
+.activity-log-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.activity-log h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.activity-elapsed {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+  white-space: nowrap;
+}
+
+.activity-empty {
+  margin: 0;
+  opacity: 0.75;
+}
+
+.activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  max-height: min(70vh, 32rem);
+  overflow-y: auto;
+}
+
+.activity-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-weight: 600;
+}
+
+.activity-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+.activity-message {
+  margin: 0.2rem 0 0;
+  font-weight: 400;
+  opacity: 0.9;
+}
+
+.activity-reasons {
+  margin-top: 0.35rem;
+  font-weight: 400;
+}
+
+.activity-reasons ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.activity-item.phase-failed .activity-phase,
+.activity-item.phase-failed .activity-message {
+  color: #c0392b;
+}
+
+.activity-item.phase-completed .activity-phase {
+  color: #1e7a3a;
+}
+
+.activity-item.phase-validation_retry .activity-phase {
+  color: #b36b00;
 }
 
 .melos h1 {

@@ -1,6 +1,9 @@
 """FastAPI edge: HTTP request -> generator -> exporter -> MIDI download."""
 
+import asyncio
+import base64
 import re
+from collections.abc import AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel
@@ -10,9 +13,12 @@ from pydantic_ai.exceptions import (
     UnexpectedModelBehavior,
     UserError,
 )
+from starlette.responses import StreamingResponse
 
 from melos.config import LlmSettings
 from melos.domain.generator import GenerationRequest, SongGenerator
+from melos.domain.models import Song
+from melos.domain.progress import ProgressEvent, QueueProgressReporter
 from melos.generation.ai import PydanticAISongGenerator
 from melos.generation.catalog import ModelCatalog, load_catalog
 from melos.generation.llm import (
@@ -136,6 +142,37 @@ def create_app(
             lyric_writer = default_lyric_writer(settings)
         return lyric_writer
 
+    def _generator_for(request: GenerationRequest) -> SongGenerator:
+        # An explicit per-request model choice wins even in stub mode --
+        # picking a model in the UI is an unambiguous request for AI
+        # generation. Unknown ids 422 rather than silently falling back,
+        # since a typo'd model id should not quietly become the default. Only
+        # the ids the client actually sent are checked against the catalog --
+        # the server's own configured default is trusted either way, so
+        # overriding one task never fails validation because the *other*
+        # task's untouched default happens not to be catalogued.
+        unknown = [
+            model_id
+            for task, model_id in (
+                ("generation", request.generation_model),
+                ("meta", request.meta_model),
+            )
+            if model_id is not None
+            and resolved_catalog.models.get(task)
+            and resolved_catalog.find(task, model_id) is None
+        ]
+        if unknown:
+            raise HTTPException(
+                status_code=422,
+                detail=f"unknown model id(s) not in the catalog: {unknown}",
+            )
+        if request.generation_model or request.meta_model:
+            gen_id = request.generation_model or settings.generation_model
+            meta_id = request.meta_model or settings.meta_model
+            # ai_generator() can raise UserError (e.g. missing API key).
+            return ai_generator(settings, resolved_catalog, gen_id, meta_id)
+        return song_generator
+
     @app.get("/api/models")
     async def list_models() -> ModelOptions:
         return ModelOptions(
@@ -171,41 +208,8 @@ def create_app(
 
     @app.post("/api/generate", response_class=Response)
     async def generate(request: GenerationRequest) -> Response:
-        # An explicit per-request model choice wins even in stub mode --
-        # picking a model in the UI is an unambiguous request for AI
-        # generation. Unknown ids 422 rather than silently falling back,
-        # since a typo'd model id should not quietly become the default. Only
-        # the ids the client actually sent are checked against the catalog --
-        # the server's own configured default is trusted either way, so
-        # overriding one task never fails validation because the *other*
-        # task's untouched default happens not to be catalogued.
-        overridden = bool(request.generation_model or request.meta_model)
-        gen_id = request.generation_model or settings.generation_model
-        meta_id = request.meta_model or settings.meta_model
-        unknown = [
-            model_id
-            for task, model_id in (
-                ("generation", request.generation_model),
-                ("meta", request.meta_model),
-            )
-            if model_id is not None
-            and resolved_catalog.models.get(task)
-            and resolved_catalog.find(task, model_id) is None
-        ]
-        if unknown:
-            raise HTTPException(
-                status_code=422,
-                detail=f"unknown model id(s) not in the catalog: {unknown}",
-            )
         try:
-            # ai_generator() itself can raise UserError (e.g. a missing API
-            # key for the chosen provider), so it has to be inside this try —
-            # not built before it, where that error would bypass the handler.
-            generator_for_request = (
-                ai_generator(settings, resolved_catalog, gen_id, meta_id)
-                if overridden
-                else song_generator
-            )
+            generator_for_request = _generator_for(request)
             song = await generator_for_request.generate(request)
         except AgentRunError as error:
             raise _llm_unavailable(error) from error
@@ -222,27 +226,134 @@ def create_app(
                 status_code=500, detail=f"generator misconfigured: {error}"
             ) from error
         try:
-            # export_song is CPU-bound but sub-ms for realistic songs (benchmarked
-            # ~54ms for an intentionally oversized 8-track/10-min arrangement);
-            # revisit with asyncio.to_thread if profiling ever shows otherwise.
-            content = export_song(song)
+            content, filename = _export_midi(song)
         except ValueError as error:
-            # Defensive: export_song is UTF-8 end to end and no longer raises
-            # ValueError for any Song that passed domain validation, but the
-            # domain/export boundary is exactly where an encoding assumption
-            # would surface first if that ever changed.
             raise HTTPException(
                 status_code=502, detail=f"song could not be exported: {error}"
             ) from error
         return Response(
             content=content,
             media_type="audio/midi",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    @app.post("/api/generate/stream")
+    async def generate_stream(request: GenerationRequest) -> StreamingResponse:
+        """SSE progress for a generation run; final event carries MIDI base64.
+
+        Classic ``POST /api/generate`` remains for simple blob downloads.
+        Request validation errors still return HTTP 422 before the stream opens.
+        Pipeline failures become a terminal ``failed`` event (HTTP 200 stream)
+        so clients always get a clean SSE end rather than a hung connection.
+        """
+        # Resolve the generator before opening the stream so catalog/override
+        # 422s surface as normal HTTP errors (not a failed SSE event).
+        try:
+            generator_for_request = _generator_for(request)
+        except UserError as error:
+            raise HTTPException(
+                status_code=500, detail=f"generator misconfigured: {error}"
+            ) from error
+
+        reporter = QueueProgressReporter()
+
+        async def run() -> None:
+            try:
+                song = await generator_for_request.generate(request, progress=reporter)
+                await reporter.report(
+                    ProgressEvent(
+                        phase="export_started",
+                        message="Building MIDI file",
+                    )
+                )
+                try:
+                    content, filename = _export_midi(song)
+                except ValueError as error:
+                    await reporter.report(
+                        ProgressEvent(
+                            phase="failed",
+                            message=f"song could not be exported: {error}",
+                        )
+                    )
+                    return
+                await reporter.report(
+                    ProgressEvent(
+                        phase="export_completed",
+                        message="MIDI ready",
+                    )
+                )
+                await reporter.report(
+                    ProgressEvent(
+                        phase="completed",
+                        message="Download ready",
+                        filename=filename,
+                        midi_base64=base64.standard_b64encode(content).decode("ascii"),
+                    )
+                )
+            except AgentRunError as error:
+                # Generator may already have emitted phase=failed; still send a
+                # stable client-facing detail when the last event was not failed
+                # (e.g. construction paths) — always terminal-close cleanly.
+                detail = _llm_detail(error)
+                await reporter.report(ProgressEvent(phase="failed", message=detail))
+            except UserError as error:
+                await reporter.report(
+                    ProgressEvent(
+                        phase="failed",
+                        message=f"generator misconfigured: {error}",
+                    )
+                )
+            except Exception as error:
+                await reporter.report(ProgressEvent(phase="failed", message=str(error)))
+            finally:
+                await reporter.close()
+
+        async def sse() -> AsyncIterator[bytes]:
+            task = asyncio.create_task(run())
+            try:
+                async for event in reporter.events():
+                    yield _sse_frame(event)
+            finally:
+                await task
+
+        return StreamingResponse(
+            sse(),
+            media_type="text/event-stream",
             headers={
-                "Content-Disposition": f'attachment; filename="{_filename(song.title)}"'
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
             },
         )
 
     return app
+
+
+def _export_midi(song: Song) -> tuple[bytes, str]:
+    # export_song is CPU-bound but sub-ms for realistic songs (benchmarked
+    # ~54ms for an intentionally oversized 8-track/10-min arrangement);
+    # revisit with asyncio.to_thread if profiling ever shows otherwise.
+    # Defensive: export_song is UTF-8 end to end and no longer raises
+    # ValueError for any Song that passed domain validation, but the
+    # domain/export boundary is exactly where an encoding assumption
+    # would surface first if that ever changed.
+    content = export_song(song)
+    return content, _filename(song.title)
+
+
+def _sse_frame(event: ProgressEvent) -> bytes:
+    # One SSE message per progress event; event name matches the phase for
+    # easy client filtering (data is still the full JSON ProgressEvent).
+    data = event.model_dump_json()
+    return f"event: {event.phase}\ndata: {data}\n\n".encode()
+
+
+def _llm_detail(error: AgentRunError) -> str:
+    """User-facing detail string for an agent failure (shared by 502 + SSE)."""
+    if isinstance(error, UnexpectedModelBehavior):
+        return f"generation failed: {error}"
+    if isinstance(error, ModelAPIError):
+        return f"LLM provider error: {error}"
+    return f"agent run failed: {error}"
 
 
 def _llm_unavailable(error: AgentRunError) -> HTTPException:
@@ -254,13 +365,7 @@ def _llm_unavailable(error: AgentRunError) -> HTTPException:
     ``UsageLimitExceeded``) is a sibling of those two, not a subclass, so the
     bare branch is a real catch-all rather than dead code.
     """
-    if isinstance(error, UnexpectedModelBehavior):
-        detail = f"generation failed: {error}"
-    elif isinstance(error, ModelAPIError):
-        detail = f"LLM provider error: {error}"
-    else:
-        detail = f"agent run failed: {error}"
-    return HTTPException(status_code=502, detail=detail)
+    return HTTPException(status_code=502, detail=_llm_detail(error))
 
 
 def _filename(title: str) -> str:

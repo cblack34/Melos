@@ -62,6 +62,12 @@ Two failure modes that **unit tests cannot see** — the mocked suite was fully 
 - **Not a defect:** a model adding its own `Intro`/`Verse`/`Chorus` markers when the request specified no `[tags]`. Sections are optional and `_section_problems` deliberately leaves the model free there; a quality check that flagged this failed two otherwise-passing cases.
 - **Result:** 7/7 cases pass on `gpt-oss:120b-cloud`, 1.5–6 min per song, including supplied lyrics with sections, Japanese lyrics, and structure-tags-only instrumentals. Transient cloud-side 500s remain occasional (three sightings across five runs) and are cloud-side, not ours.
 
+### Generation progress events (M3)
+
+While a song generates, the pipeline emits typed **progress events** (`domain/progress.py`) for phases such as meta resolution, composition start, validation retries (with attempt/max and human-readable reasons), export, completion, and failure. Callers pass an optional `ProgressReporter` into `SongGenerator.generate(..., progress=...)`. With no reporter, generation is silent.
+
+**HTTP:** `POST /api/generate/stream` streams those events as SSE (`text/event-stream`, one message per phase; `event:` is the phase name, `data:` is the JSON `ProgressEvent`). The terminal `completed` event includes `filename` + `midi_base64` so the client can download without a job store. Classic `POST /api/generate` still returns a binary MIDI blob. Request validation (422) happens before the stream opens; pipeline failures end the stream with a terminal `failed` event (HTTP 200).
+
 ## Dependency rules
 
 - Only very open licenses: MIT, Apache 2.0, or clear equivalents. No AGPL or strong copyleft.
