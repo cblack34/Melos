@@ -57,7 +57,9 @@ def _meta_resolver_fixed() -> MetaResolver:
     return MetaResolver(FunctionModel(explode), use_native_output=False)
 
 
-def _meta_resolver_fills_gaps() -> MetaResolver:
+def _meta_resolver_fills_gaps(
+    provider_response_id: str | None = None,
+) -> MetaResolver:
     def respond(_: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         tool = info.output_tools[0]
         payload = {
@@ -65,7 +67,11 @@ def _meta_resolver_fills_gaps() -> MetaResolver:
             "key": "C",
             "time_signature": {"numerator": 4, "denominator": 4},
         }
-        return ModelResponse(parts=[ToolCallPart(tool.name, payload)])
+        return ModelResponse(
+            parts=[ToolCallPart(tool.name, payload)],
+            model_name="openai/gpt-5-nano",
+            provider_response_id=provider_response_id,
+        )
 
     return MetaResolver(FunctionModel(respond), use_native_output=False)
 
@@ -74,13 +80,20 @@ def _generator(
     payloads: list[dict[str, object]],
     *,
     meta: MetaResolver | None = None,
+    provider_response_ids: list[str] | None = None,
 ) -> PydanticAISongGenerator:
     remaining = list(payloads)
+    remaining_ids = list(provider_response_ids or [])
 
     def respond(_: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         payload = remaining.pop(0) if len(remaining) > 1 else remaining[0]
         tool = info.output_tools[0]
-        return ModelResponse(parts=[ToolCallPart(tool.name, payload)])
+        response_id = remaining_ids.pop(0) if remaining_ids else None
+        return ModelResponse(
+            parts=[ToolCallPart(tool.name, payload)],
+            model_name="x-ai/grok-4.5",
+            provider_response_id=response_id,
+        )
 
     return PydanticAISongGenerator(
         FunctionModel(respond),
@@ -131,6 +144,28 @@ async def test_missing_meta_emits_meta_started_and_completed() -> None:
 
 
 @pytest.mark.anyio
+async def test_meta_provider_response_id_is_reported() -> None:
+    compact = {**GOOD_COMPACT, "bpm": 97.0, "key": "C", "ts": "4/4"}
+    reporter = ListProgressReporter()
+    await _generator(
+        [compact],
+        meta=_meta_resolver_fills_gaps("gen-meta-1"),
+    ).generate(
+        GenerationRequest.model_validate(PARTIAL_META_REQUEST),
+        progress=reporter,
+    )
+
+    response = next(e for e in reporter.events if e.phase == "model_response")
+    assert response.provider_response_id == "gen-meta-1"
+    assert _phases(reporter.events)[:4] == [
+        "request_received",
+        "meta_started",
+        "model_response",
+        "meta_completed",
+    ]
+
+
+@pytest.mark.anyio
 async def test_constraint_retry_emits_validation_retry_with_reason() -> None:
     wrong_tempo: dict[str, object] = {**GOOD_COMPACT, "bpm": 120.0}
     reporter = ListProgressReporter()
@@ -150,6 +185,35 @@ async def test_constraint_retry_emits_validation_retry_with_reason() -> None:
     # retries={"output": 3} ⇒ 4 total attempts (initial + 3 retries)
     assert retry.max_attempts == 4
     assert any("bpm" in reason for reason in retry.reasons)
+
+
+@pytest.mark.anyio
+async def test_every_provider_response_id_is_reported_across_retries() -> None:
+    wrong_tempo: dict[str, object] = {**GOOD_COMPACT, "bpm": 120.0}
+    reporter = ListProgressReporter()
+    await _generator(
+        [wrong_tempo, GOOD_COMPACT],
+        provider_response_ids=["gen-compose-1", "gen-compose-2"],
+    ).generate(
+        GenerationRequest.model_validate(FULL_META_REQUEST),
+        progress=reporter,
+    )
+
+    responses = [e for e in reporter.events if e.phase == "model_response"]
+    assert [e.provider_response_id for e in responses] == [
+        "gen-compose-1",
+        "gen-compose-2",
+    ]
+    assert all(e.model_id for e in responses)
+    assert _phases(reporter.events) == [
+        "request_received",
+        "meta_skipped",
+        "generation_started",
+        "model_response",
+        "validation_retry",
+        "model_response",
+        "generation_completed",
+    ]
 
 
 @pytest.mark.anyio
@@ -203,15 +267,14 @@ async def test_stub_generator_emits_minimal_phase_sequence() -> None:
 
 def test_progress_event_is_json_serializable_for_future_sse() -> None:
     event = ProgressEvent(
-        phase="validation_retry",
-        message="Constraint check failed; regenerating",
-        attempt=1,
-        max_attempts=4,
-        reasons=["bpm must be exactly 97"],
+        phase="model_response",
+        message="x-ai/grok-4.5",
+        model_id="x-ai/grok-4.5",
+        provider_response_id="gen-test-123",
     )
     payload = event.model_dump(mode="json")
-    assert payload["phase"] == "validation_retry"
-    assert payload["reasons"] == ["bpm must be exactly 97"]
+    assert payload["phase"] == "model_response"
+    assert payload["provider_response_id"] == "gen-test-123"
 
 
 @pytest.mark.anyio

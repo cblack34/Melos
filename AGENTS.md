@@ -42,7 +42,7 @@ All must pass before you merge.
 2. **Pydantic V2 is the single source of truth.** Use Pydantic models instead of dataclasses everywhere. All structured LLM outputs are validated by Pydantic before use.
 3. **Multi-track MIDI + embedded lyrics from day one.** Generated MIDI must contain multiple tracks, and lyric meta events whenever lyrics are present (not all songs have lyrics).
 4. **Meta values are hard constraints.** When tempo, key, time signature, instrumentation (etc.) are supplied to the generation call, the model must obey them. Missing meta is resolved upstream before the generation call runs.
-5. **Very open licenses only.** Dependencies must use MIT, Apache 2.0, or equivalent permissive licenses. No AGPL or strong copyleft.
+5. **Closed-source-compatible licenses only.** Prefer permissive licenses (MIT, Apache 2.0, BSD, ISC, or clear equivalents). Weak, file-level copyleft such as MPL-2.0 is allowed only after review confirms that its obligations stay confined to the covered dependency files and cannot require disclosure of Melos source. Record required notices and exact source locations in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). No AGPL, GPL, or other strong/network copyleft.
 
 ## Code style (deviations only — defaults assumed)
 
@@ -58,7 +58,7 @@ All must pass before you merge.
 
 ## Dependencies
 
-**Add packages yourself when they clearly beat hand-rolling — no need to stop.** Reach for the stdlib or an already-installed package first; if you add one, vet it: widely used, actively maintained, a very open license (MIT/Apache-2.0/equivalent), and a fit for the stack. Prefer existing libraries over custom code; put most libraries behind interfaces.
+**Add packages yourself when they clearly beat hand-rolling — no need to stop.** Reach for the stdlib or an already-installed package first; if you add one, vet it: widely used, actively maintained, closed-source-compatible, and a fit for the stack. Prefer permissive licenses. A weak, file-level copyleft dependency needs an explicit review of source-disclosure and distribution obligations plus a matching [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) entry. Reject anything that could require disclosure of Melos source. Prefer existing libraries over custom code; put most libraries behind interfaces.
 
 ## Build spec (read `docs/build-brief.md` first — this list is the reading order)
 

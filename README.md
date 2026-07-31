@@ -13,3 +13,6 @@ UI at <http://localhost:5173>, API at <http://localhost:8000>.
 
 Docs: start at [`docs/build-brief.md`](docs/build-brief.md); how-we-work lives
 in [`AGENTS.md`](AGENTS.md).
+
+Third-party license and source notices are recorded in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

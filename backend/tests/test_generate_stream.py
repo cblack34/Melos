@@ -131,11 +131,16 @@ GOOD_COMPACT: dict[str, object] = {
 def _ai_with_retry() -> PydanticAISongGenerator:
     wrong = {**GOOD_COMPACT, "bpm": 120.0}
     remaining = [wrong, GOOD_COMPACT]
+    response_ids = ["gen-retry-1", "gen-retry-2"]
 
     def respond(_: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         payload = remaining.pop(0) if len(remaining) > 1 else remaining[0]
         tool = info.output_tools[0]
-        return ModelResponse(parts=[ToolCallPart(tool.name, payload)])
+        return ModelResponse(
+            parts=[ToolCallPart(tool.name, payload)],
+            model_name="x-ai/grok-4.5",
+            provider_response_id=response_ids.pop(0),
+        )
 
     def explode(_: list[ModelMessage], __: AgentInfo) -> ModelResponse:
         raise AssertionError("meta must be fully supplied")
@@ -163,6 +168,10 @@ async def test_stream_includes_validation_retry_event() -> None:
 
     phases = [e["phase"] for e in events]
     assert "validation_retry" in phases
+    provider_ids = [
+        e["provider_response_id"] for e in events if e["phase"] == "model_response"
+    ]
+    assert provider_ids == ["gen-retry-1", "gen-retry-2"]
     retry = next(e for e in events if e["phase"] == "validation_retry")
     assert retry["attempt"] == 1
     reasons = retry["reasons"]

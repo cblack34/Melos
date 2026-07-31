@@ -18,6 +18,7 @@ ProgressPhase = Literal[
     "meta_skipped",
     "meta_completed",
     "generation_started",
+    "model_response",
     "validation_retry",
     "generation_completed",
     "export_started",
@@ -38,8 +39,10 @@ class ProgressEvent(BaseModel):
     # total attempts allowed (pydantic-ai retries={"output": N} ⇒ N+1 attempts).
     attempt: int | None = Field(default=None, ge=1)
     max_attempts: int | None = Field(default=None, ge=1)
-    # Reserved for multi-model UI; most emitters leave this unset.
+    # Model-response correlation data. OpenRouter uses a `gen-…` value for
+    # provider_response_id; other providers may use a different request ID.
     model_id: str | None = None
+    provider_response_id: str | None = None
     reasons: list[str] = Field(default_factory=list)
     # Terminal success payload for SSE (phase=completed only).
     filename: str | None = None

@@ -14,6 +14,7 @@ const EMPTY = {
   key: '',
   timeSignature: '',
   lyrics: '',
+  includeInstruments: [],
   generationModel: '',
   metaModel: '',
 }
@@ -46,6 +47,7 @@ describe('buildGenerationRequest', () => {
         key: 'Dm',
         timeSignature: '3/4',
         lyrics: '[verse 1]\nCarry me home',
+        includeInstruments: ['Acoustic Grand Piano', 'drums'],
         generationModel: 'anthropic/claude-sonnet-5',
         metaModel: 'openai/gpt-5-nano',
       }),
@@ -55,6 +57,7 @@ describe('buildGenerationRequest', () => {
       key: 'Dm',
       time_signature: { numerator: 3, denominator: 4 },
       lyrics: '[verse 1]\nCarry me home',
+      include_instruments: ['Acoustic Grand Piano', 'drums'],
       generation_model: 'anthropic/claude-sonnet-5',
       meta_model: 'openai/gpt-5-nano',
     })
@@ -62,6 +65,12 @@ describe('buildGenerationRequest', () => {
 
   it('omits model overrides when left at the server default', () => {
     expect(buildGenerationRequest(EMPTY)).toEqual({ prompt: 'a tune' })
+  })
+
+  it('omits an empty instrument selection', () => {
+    expect(buildGenerationRequest({ ...EMPTY, includeInstruments: [] })).toEqual({
+      prompt: 'a tune',
+    })
   })
 
   it('omits whitespace-only lyrics so the song stays an instrumental', () => {
@@ -155,14 +164,13 @@ describe('filenameFrom', () => {
 describe('parseSseBlock', () => {
   it('parses a progress event data line', () => {
     const block = [
-      'event: validation_retry',
-      'data: {"phase":"validation_retry","attempt":1,"max_attempts":4,"reasons":["bpm must be exactly 97"]}',
+      'event: model_response',
+      'data: {"phase":"model_response","model_id":"x-ai/grok-4.5","provider_response_id":"gen-test-123"}',
     ].join('\n')
     expect(parseSseBlock(block)).toEqual({
-      phase: 'validation_retry',
-      attempt: 1,
-      max_attempts: 4,
-      reasons: ['bpm must be exactly 97'],
+      phase: 'model_response',
+      model_id: 'x-ai/grok-4.5',
+      provider_response_id: 'gen-test-123',
     })
   })
 

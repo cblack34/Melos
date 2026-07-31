@@ -13,6 +13,7 @@ from pydantic_ai.settings import ModelSettings
 
 from melos.domain.generator import GenerationRequest
 from melos.domain.models import KeyName, TimeSignature
+from melos.generation.observability import progress_hooks
 
 _INSTRUCTIONS = (
     "You pick musical metadata for a song that will be generated from a user "
@@ -50,6 +51,7 @@ class MetaResolver:
             instructions=_INSTRUCTIONS,
             retries={"output": 2},
             model_settings=model_settings,
+            capabilities=[progress_hooks()],
         )
 
     async def resolve(self, request: GenerationRequest) -> ResolvedMeta:

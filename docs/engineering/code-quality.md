@@ -19,7 +19,7 @@ Intention-revealing names that encode the domain **and** unit where units exist 
 - **Pydantic over dataclasses** — domain and request/response models use Pydantic V2 exclusively so validation and serialization stay consistent.
 - **LLM output is data, not files** — the MIDI generation call returns structured data only; binary MIDI is produced by a pure exporter after validation.
 - **Interfaces for most libraries** — wrap third-party services (MIDI writers, LLM clients, etc.) behind protocols so tests and future swaps stay cheap. Core stable libraries may be used directly when abstraction cost exceeds benefit.
-- **License gate** — every new dependency must be MIT, Apache 2.0, or an equally permissive license. Reject AGPL and strong copyleft.
+- **License gate** — dependencies must be compatible with keeping Melos source closed. Prefer MIT, Apache 2.0, BSD, ISC, or equivalent permissive licenses. Weak, file-level copyleft (for example MPL-2.0) requires review confirming that obligations remain confined to covered dependency files, plus an entry in [`THIRD_PARTY_NOTICES.md`](../../THIRD_PARTY_NOTICES.md). Reject AGPL, GPL, strong/network copyleft, and any license that could require disclosure of Melos source.
 - **No secrets in the repo** — API keys and env-specific config live in environment / secret stores, never in source.
 
 ## Smells to hunt (in self-review)
