@@ -166,12 +166,12 @@ async def test_missing_vocal_track_is_retried() -> None:
 
 @pytest.mark.anyio
 async def test_incomplete_words_are_currently_accepted() -> None:
-    """Completeness is DEFERRED to per-section generation (issue #39).
+    """The legacy single-track completeness check remains disabled (issue #39).
 
-    One-shot generation cannot reproduce a real song's lyrics — measured 72% of
-    404 words — so ``ENFORCE_LYRIC_COMPLETENESS`` is off and partial lyrics pass
-    through unflagged. Invert this test (back to "retried until fixed") when
-    per-section generation turns the flag on.
+    Real output can distribute primary lyrics across tracks, so this validator
+    cannot distinguish complete handoffs from missing text. Keep this behavior
+    explicit until the whole-song semantic lyric model replaces it; independent
+    section generation is not the fix.
     """
     wrong = compact(
         tracks=[
@@ -329,8 +329,8 @@ def test_closest_singer_is_picked_by_similarity_not_length(
     """The retry feedback must name the track that's actually closest to the
     wanted lyrics, not whichever vocal track happens to have more characters.
 
-    Under the completeness flag (deferred — issue #39), so the feedback quality
-    stays covered for when per-section generation switches it on.
+    Under the legacy completeness flag (deferred — issue #39), so its feedback
+    quality remains covered while the whole-song semantic path is built.
     """
     monkeypatch.setattr(ai, "ENFORCE_LYRIC_COMPLETENESS", True)
     request = GenerationRequest.model_validate(
