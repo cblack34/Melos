@@ -5,6 +5,7 @@ import {
   midiBlobFromBase64,
   streamGenerate,
 } from './api'
+import InstrumentPicker from './InstrumentPicker'
 import LyricsField from './LyricsField'
 import ModelPicker from './ModelPicker'
 import './App.css'
@@ -31,6 +32,7 @@ export default function App() {
   const [songKey, setSongKey] = useState('')
   const [timeSignature, setTimeSignature] = useState('')
   const [lyrics, setLyrics] = useState('')
+  const [includeInstruments, setIncludeInstruments] = useState<string[]>([])
   const [generationModel, setGenerationModel] = useState('')
   const [metaModel, setMetaModel] = useState('')
   const [busy, setBusy] = useState(false)
@@ -66,6 +68,7 @@ export default function App() {
         key: songKey,
         timeSignature,
         lyrics,
+        includeInstruments,
         generationModel,
         metaModel,
       })
@@ -155,6 +158,11 @@ export default function App() {
             lyrics={lyrics}
             onChange={setLyrics}
             onBusyChange={setLyricsBusy}
+          />
+          <InstrumentPicker
+            selected={includeInstruments}
+            onChange={setIncludeInstruments}
+            disabled={busy}
           />
           <ModelPicker
             generationModel={generationModel}

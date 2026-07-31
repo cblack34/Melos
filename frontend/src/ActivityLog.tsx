@@ -18,6 +18,7 @@ const PHASE_LABEL: Record<string, string> = {
   meta_skipped: 'Meta (supplied)',
   meta_completed: 'Meta ready',
   generation_started: 'Composing',
+  model_response: 'Model response',
   validation_retry: 'Retry',
   generation_completed: 'Arrangement OK',
   export_started: 'Building MIDI',
@@ -73,6 +74,12 @@ export default function ActivityLog({ entries, elapsedMs, running }: Props) {
                 </div>
                 {entry.event.message && (
                   <p className="activity-message">{entry.event.message}</p>
+                )}
+                {entry.event.provider_response_id && (
+                  <p className="activity-generation-id">
+                    <span>Provider response ID</span>
+                    <code>{entry.event.provider_response_id}</code>
+                  </p>
                 )}
                 {expandable && (
                   <details className="activity-reasons">

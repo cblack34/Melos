@@ -28,6 +28,7 @@ from melos.domain.progress import (
 )
 from melos.generation.contract import CompactSong, CompactTrack, to_song
 from melos.generation.meta import MetaResolver, ResolvedMeta
+from melos.generation.observability import progress_hooks
 
 # pydantic-ai output retry budget (retries={"output": N} ⇒ N+1 total attempts).
 _OUTPUT_RETRIES = 3
@@ -268,6 +269,7 @@ class PydanticAISongGenerator:
             deps_type=Constraints,
             retries={"output": _OUTPUT_RETRIES},
             model_settings=model_settings,
+            capabilities=[progress_hooks()],
         )
         self._meta_resolver = meta_resolver
 

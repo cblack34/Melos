@@ -49,7 +49,7 @@ These are desired capabilities. The agent is free to define intermediate milesto
    When tempo, key, time signature, instrumentation, or similar values are supplied to the generation call, the model must obey them. Missing values are resolved by upstream steps or earlier AI/tool calls so the generation call always receives a complete package.
 
 5. **Dependency license policy**  
-   Only very open licenses (MIT, Apache 2.0, and clear equivalents). No AGPL or other strong copyleft licenses that would force the application itself to be open-sourced.
+   Keep Melos closed-source-compatible. Prefer permissive licenses (MIT, Apache 2.0, BSD, ISC, and clear equivalents). Weak, file-level copyleft such as MPL-2.0 is allowed after review confirms that disclosure obligations remain limited to the covered dependency files; record notices and corresponding source locations in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md). No AGPL, GPL, or other strong/network copyleft that could require Melos source disclosure.
 
 ## Definition of done
 

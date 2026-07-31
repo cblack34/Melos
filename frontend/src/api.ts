@@ -6,6 +6,7 @@ export interface GenerationFormValues {
   key: string
   timeSignature: string
   lyrics: string
+  includeInstruments: string[]
   generationModel: string
   metaModel: string
 }
@@ -16,6 +17,7 @@ export function buildGenerationRequest({
   key,
   timeSignature,
   lyrics,
+  includeInstruments,
   generationModel,
   metaModel,
 }: GenerationFormValues): Record<string, unknown> {
@@ -27,6 +29,7 @@ export function buildGenerationRequest({
     body.time_signature = { numerator, denominator }
   }
   if (lyrics.trim()) body.lyrics = lyrics
+  if (includeInstruments.length) body.include_instruments = includeInstruments
   if (generationModel) body.generation_model = generationModel
   if (metaModel) body.meta_model = metaModel
   return body
@@ -74,6 +77,7 @@ export interface ProgressEvent {
   attempt?: number | null
   max_attempts?: number | null
   model_id?: string | null
+  provider_response_id?: string | null
   reasons?: string[]
   filename?: string | null
   midi_base64?: string | null
