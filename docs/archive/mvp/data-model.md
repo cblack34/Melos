@@ -1,4 +1,6 @@
-# Data Model
+# MVP Data Model (Historical)
+
+> **Status: completed and archived.** This describes the MIDI-shaped model shipped by the MVP. It is not the target canonical model. Active development is governed by the semantic-composition feature pack.
 
 Pydantic V2 models are the single source of truth for song structure. The LLM that performs MIDI content generation must emit data that validates against these models (or a compact equivalent that maps 1:1 onto them). No dataclasses for the same concepts.
 
@@ -27,11 +29,11 @@ Blank means an instrumental, not an error. Any `[text]` is a section with that l
 
 Comparison ignores *how* the model split syllables — casing, punctuation, hyphens, and the leading-space word-boundary convention are all normalized, and notes without a syllable are skipped so melisma (one syllable held across several notes) is legal.
 
-> **Current limitation (deferred to per-section generation — issue #39).** Lyric *completeness* is not enforced right now: a generated song may sing only part of the supplied words, with no warning. One-shot generation cannot reproduce a real song's lyrics — measured on a 404-word request, the model emitted every section correctly but sang 72% of the words, thinning the repeated choruses. Enforcing completeness turned that into a 502 after three retries, so the check is off (`ENFORCE_LYRIC_COMPLETENESS` in `generation/ai.py`) until sections are generated one call at a time, where each check covers ~40 words and is reliable. Every other lyric rule below still holds.
+> **MVP limitation.** Lyric *completeness* is not enforced. The validator assumed one vocal track must carry the complete text; on a 404-word request its closest track contained 72%, so enforcement caused retries and a 502. Later inspection found the model had distributed real lyric events across five vocal tracks, meaning the result did not prove that 28% vanished—it proved the single-track validator could not establish coverage. Issue #39 originally proposed per-section generation, but that solution was superseded because it weakens whole-song continuity and boundary-aware composition. See [`../../decisions/inactive-directions.md`](../../decisions/inactive-directions.md).
 
 Supplied lyrics are reproduced **glyph for glyph**: the model may split them across notes but must not transliterate, romanize, or respell them. This matters for non-phonetic scripts — a model asked to sing 咲く will happily emit さく, which is the same sound but no longer the words the user typed, and a DAW should show the lyric sheet as written.
 
-**Known ceiling (applies once completeness enforcement is back on):** a true call-and-response, where no single voice sings every line, would trip the completeness check. The upgrade path is merging lyric events across vocal tracks by tick with same-tick dedup; not built until it is needed.
+**Known ceiling:** the MVP completeness validator assumes one vocal track carries the requested text. That does not model call-and-response or lyrics distributed across multiple vocal tracks. The active feature replaces string matching against one track with explicit source-token assignments across vocal parts.
 
 **Known tradeoff:** normalizing away word-split noise (whitespace, hyphens, underscores) is *all-or-nothing* — it also erases the boundary between "space = new word" and "space = a sloppy mid-word split," so two different sentences that happen to share letters can compare equal (e.g. "an ice cream" and "a nice cream" both normalize to `anicecream`). This is accepted, not accidental: the normalization is required for the model to legally represent a syllable split like `lov` + `er` as one word. Tightening it would need a per-note signal (e.g. an explicit new-word marker) rather than a purely textual comparison; not built until the false-pass rate in practice justifies it.
 

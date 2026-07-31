@@ -17,7 +17,7 @@ Intention-revealing names that encode the domain **and** unit where units exist 
 ## Project-specific rules
 
 - **Pydantic over dataclasses** — domain and request/response models use Pydantic V2 exclusively so validation and serialization stay consistent.
-- **LLM output is data, not files** — the MIDI generation call returns structured data only; binary MIDI is produced by a pure exporter after validation.
+- **LLM output is data, not files** — generative calls return Pydantic-validated task data; deterministic adapters produce MIDI or any later file artifact after validation.
 - **Interfaces for most libraries** — wrap third-party services (MIDI writers, LLM clients, etc.) behind protocols so tests and future swaps stay cheap. Core stable libraries may be used directly when abstraction cost exceeds benefit.
 - **License gate** — dependencies must be compatible with keeping Melos source closed. Prefer MIT, Apache 2.0, BSD, ISC, or equivalent permissive licenses. Weak, file-level copyleft (for example MPL-2.0) requires review confirming that obligations remain confined to covered dependency files, plus an entry in [`THIRD_PARTY_NOTICES.md`](../../THIRD_PARTY_NOTICES.md). Reject AGPL, GPL, strong/network copyleft, and any license that could require disclosure of Melos source.
 - **No secrets in the repo** — API keys and env-specific config live in environment / secret stores, never in source.
@@ -25,8 +25,8 @@ Intention-revealing names that encode the domain **and** unit where units exist 
 ## Smells to hunt (in self-review)
 
 - **Universal:** long function, God component / large class, duplicated code, primitive obsession, long parameter list / data clumps, feature envy, shotgun surgery (one change touching many files → centralize the knowledge), message chains (walking `a.b.c.d` instead of asking the source of truth), unclear names, dead / speculative code.
-- **Project-specific:** LLM response parsed without Pydantic validation; MIDI bytes constructed inside an agent/tool call; new dependency without a license check; dataclass used for a domain concept that already has (or should have) a Pydantic model.
+- **Project-specific:** LLM response parsed without Pydantic validation; file bytes constructed inside an agent/tool call; semantic-domain code importing an exporter/renderer; new dependency without a license check; dataclass used for a domain concept that already has (or should have) a Pydantic model.
 
 ## Testing
 
-Unit-test the **pure logic** where it pays off — domain rules, conversions, serialization round-trips, validation. The acceptance doc's self-check is the definition of done. Verify UI and feel by running the app, not by building heavy component-test scaffolding. If something is hard to test, that's a design smell — fix the coupling, don't test around it.
+Unit-test the **pure logic** where it pays off — domain rules, conversions, serialization round-trips, validation. The active final acceptance contract remains the definition of done even when the tactical plan changes. Verify UI and feel by running the app, not by building heavy component-test scaffolding. If something is hard to test, that's a design smell — fix the coupling, don't test around it.

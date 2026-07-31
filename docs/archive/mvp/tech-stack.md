@@ -1,4 +1,6 @@
-# Tech Stack
+# MVP Tech Stack and Implementation Record (Historical)
+
+> **Status: completed and archived.** This records the stack and empirical model findings used for the MVP. Lockfiles and shipped code are authoritative for the current baseline; the active feature pack controls new work.
 
 | Layer | Choice | Why |
 | --- | --- | --- |
@@ -10,7 +12,7 @@
 | Local runtime | Docker + Docker Compose | Locked |
 | Python packaging | UV (workspaces if multiple packages) | Locked preference |
 | Python type checking | ty (`uv run ty check`) | Locked — native Pydantic support, same vendor as uv/ruff. Beta: if it blocks a story (missing feature, false positive), fall back to mypy and record the swap here |
-| TypeScript type checking | tsc (`npm run typecheck` = `tsc -b --noEmit`, see [`AGENTS.md`](../AGENTS.md#definition-of-done-self-verify--run-before-every-pr-is-merge-ready)) | Locked — industry standard |
+| TypeScript type checking | tsc (`npm run typecheck` = `tsc -b --noEmit`, see [`AGENTS.md`](../../../AGENTS.md#definition-of-done)) | Locked — industry standard |
 | LLM access | OpenRouter, or a locally hosted model (Ollama / Docker) | Locked — Pydantic AI keeps the model swappable |
 | LLM models | Agent researches and selects per AI task | Delegated — see below |
 | MIDI writing | Deterministic library (e.g. mido) behind an interface | Suggestion — keep binary format out of the LLM |
@@ -39,7 +41,7 @@ Structured-output notes (verified against vendor docs):
 
 - Local Ollama (≥0.5) enforces json_schema via grammar-constrained decoding → use Pydantic AI `NativeOutput`. Ollama **Cloud** does not enforce it. OpenRouter enforcement is per endpoint → `ToolOutput` (default) for portability, `provider: {require_parameters: true}` to route to enforcing endpoints.
 - Ollama truncation risk is context fill, not output cap (`num_predict` defaults to −1). There is no per-request way to raise the context window through Ollama's OpenAI-compatible endpoint (confirmed against Ollama's own docs, `docs/api/openai-compatibility.mdx`: the only supported mechanism is a custom Modelfile with `PARAMETER num_ctx <N>`, or the server-wide `OLLAMA_CONTEXT_LENGTH` env var) — `ModelSettings(extra_body=...)` is silently ignored by Ollama's compat layer, not a working override.
-- All local picks are Apache-2.0 (license gate); `pydantic-ai-slim[openai,openrouter]` is MIT (openai extra covers Ollama). Its `openai` extra transitively pulls in `certifi` and `tqdm` (MPL-2.0/file-level coverage) — reviewed and accepted because Melos uses them unmodified, their copyleft does not extend to separate Melos files, and distribution/source notices are recorded in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md). Vite's build-only `lightningcss` dependency is handled by the same notice.
+- All local picks are Apache-2.0 (license gate); `pydantic-ai-slim[openai,openrouter]` is MIT (openai extra covers Ollama). Its `openai` extra transitively pulls in `certifi` and `tqdm` (MPL-2.0/file-level coverage) — reviewed and accepted because Melos uses them unmodified, their copyleft does not extend to separate Melos files, and distribution/source notices are recorded in [`THIRD_PARTY_NOTICES.md`](../../../THIRD_PARTY_NOTICES.md). Vite's build-only `lightningcss` dependency is handled by the same notice.
 - **Model catalog (`backend/models.yaml`)** lets generation/meta models — and their per-model quirks (disabled reasoning, native-output override, token/timeout budgets) — be added or retuned by editing that one file, no code change. A model absent from the catalog still works through the code-based heuristics in `generation/llm.py` (provider inferred from `MELOS_LLM_PROVIDER`, DeepSeek-prefix reasoning fallback, etc.); the catalog is additive. `GET /api/models` serves it to the frontend; the UI's "⚙ Model" picker lets a request override the generation/meta model per call (validated against the catalog; the *server's own default* is trusted even when absent from the catalog, so overriding one task never fails because the other task's untouched default isn't catalogued). Must live inside `backend/` — the Docker build context is `./backend`, so a repo-root file would not reach the image. Provider `base_url` (ollama) is an **optional override** of `MELOS_OLLAMA_BASE_URL` / `LlmSettings.ollama_base_url` — leave it unset on the default `ollama` provider so compose's `host.docker.internal` (and any other env default) is not shadowed by a YAML `localhost`.
 - **DeepSeek reasoning models on OpenRouter reject a forced `tool_choice`** — verified live: `deepseek/deepseek-v4-flash` 400s with "Thinking mode does not support this tool_choice" (pydantic-ai's `ToolOutput`, OpenRouter's default output mode, always forces one). OpenRouter's unified `reasoning: {"enabled": false}` sidesteps it. Confirmed **not** a general reasoning+tool_choice conflict: Claude Sonnet 5 and GPT-5-nano were tested with the identical forced `tool_choice` and have no issue, so the fix targets `deepseek/*` model names only (`generation/llm.py`) rather than disabling reasoning for every hosted model.
 
@@ -71,7 +73,7 @@ While a song generates, the pipeline emits typed **progress events** (`domain/pr
 ## Dependency rules
 
 - Keep Melos source closed: prefer MIT, Apache 2.0, BSD, ISC, or clear equivalents.
-- Weak, file-level copyleft such as MPL-2.0 is allowed only after review confirms that obligations remain limited to covered dependency files. Record the package, version, license, modification status, and corresponding source location in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).
+- Weak, file-level copyleft such as MPL-2.0 is allowed only after review confirms that obligations remain limited to covered dependency files. Record the package, version, license, modification status, and corresponding source location in [`THIRD_PARTY_NOTICES.md`](../../../THIRD_PARTY_NOTICES.md).
 - No AGPL, GPL, strong/network copyleft, or other license that could require disclosure of Melos source.
 - Prefer well-maintained existing libraries over custom implementations.
 - Thin wrappers around libraries are acceptable; large "shoehorn" adapters are not.

@@ -55,7 +55,7 @@ def supports_native_output(
     ``NativeOutput`` is used there. Ollama **Cloud** models accept but do not
     enforce the schema, and OpenRouter enforcement varies per endpoint — both
     use ``ToolOutput`` (the pydantic-ai default), the portable choice
-    (docs/tech-stack.md).
+    (docs/archive/mvp/tech-stack.md).
     """
     if entry is not None and entry.native_output is not None:
         return entry.native_output
