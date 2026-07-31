@@ -1,30 +1,34 @@
 # AGENTS.md — Melos
 
-Instructions for the AI agent that builds this app. This is the source of truth for **how** we work; the build spec (`docs/` — see the list at the bottom) is **what** to build.
+Instructions for the AI agents that plan and build this app. This is the source of truth for **how** to work; the active strategic pack listed below defines **what** must be true.
 
-**The code in every doc — types, snippets, file layouts, commands — is illustrative guidance, not a mandate.** The docs give the high-level *what*; you own the *how*: research, validate against current official docs, and follow best practice. The acceptance criteria and the described behavior are the contract — not any particular snippet.
+**Code, types, schemas, commands, and file layouts in strategic docs are illustrative guidance, not mandates.** Described behavior, architecture contracts, non-negotiables, and final acceptance are authoritative. Verify implementation details against current official documentation and the live repository.
 
 ## What this is
 
-Melos is an AI-powered music generation web app that turns creative prompts into complete multi-track MIDI arrangements (with lyric support). Stack: Python 3.14, Pydantic V2, Pydantic AI, FastAPI, React + TypeScript + Vite, Docker. LLM access is via OpenRouter or a locally hosted model — see [`docs/tech-stack.md`](docs/tech-stack.md). Versions are pinned at scaffold; lockfiles are authoritative once they exist.
+Melos is an AI-powered music creation web app. The shipped MVP turns a prompt into multi-track MIDI. Active work replaces the MIDI-shaped composition core with a whole-song semantic score that can later support editable notation, deterministic audio rendering, stems, and DAW exports without making any output format the source of truth.
+
+Stack: Python 3.14, Pydantic V2, Pydantic AI, FastAPI, React + TypeScript + Vite, and Docker. Lockfiles are authoritative.
 
 ## Prime directive
 
-**Build the Melos MVP end-to-end, autonomously, until it works — then stop and hand it back.**
+**Cold-read the active pack and current repository, then propose a tactical implementation plan to the user before coding.** Preserve the complete strategic outcome, keep the shipped MVP green, and stop when final acceptance passes.
 
-You may create spine/integration branches per milestone and squash-merge into the spine branch. A human merges spine → main. Definition of working: every item in [`docs/acceptance.md`](docs/acceptance.md) passes (automated + manual DAW check).
+The pack's suggested implementation approach is informed but non-binding. Preserve hard causal dependencies, but revise advisory order when live code, tests, or new evidence justify a better plan. Discuss material replanning with the user.
 
-## Definition of done (self-verify — run before every PR is merge-ready)
+Archived specs are historical evidence, not active instructions. Do not revive a direction from the archive or GitHub issue history when it conflicts with the active pack or [`docs/decisions/inactive-directions.md`](docs/decisions/inactive-directions.md).
 
-This block is canonical — other docs link here rather than restating it.
+## Definition of done
+
+Run before every PR is integration-ready and before declaring the feature complete:
 
 ```bash
-# backend — run from backend/
+# backend — from backend/
 uv run ruff check .
 uv run ruff format --check .
 uv run ty check
 uv run pytest
-# frontend — run from frontend/ (typecheck = tsc -b --noEmit)
+# frontend — from frontend/
 npm run lint
 npm run typecheck
 npm run test
@@ -32,39 +36,46 @@ npm run build
 # PR review must come back clean
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same commands on every PR.
+CI (`.github/workflows/ci.yml`) runs the same commands. All must pass before merge.
 
-All must pass before you merge.
+## Non-negotiables
 
-## Non-negotiables (you can't infer these)
+1. **The canonical source is a Pydantic semantic score.** LLMs emit validated structured data, never MIDI, audio, MusicXML, or DAW files. MIDI-shaped note events are an export/performance model, not the composition source.
+2. **Every composition attempt sees the whole song.** One whole-song composition operation produces the arrangement; validation-driven retries, when needed, retry the whole score and are logged. It may enrich the user's direction but may not countermand user constraints or directives. Do not generate independent sections and stitch them together.
+3. **Code realizes declared musical intent deterministically.** Reusable patterns, chords, techniques, lyrics, and transitions expand through typed adapters. Keep the canonical score exact; seeded performance variation belongs at a rendering boundary. Instrumental audio is not composed by an audio LLM.
+4. **Every run is an experiment.** Preserve the raw user request separately from injected instructions and log model/settings, prompt-component versions, raw responses, validated results, retries, and artifact hashes.
+5. **Dependencies remain closed-source-compatible.** Prefer MIT, Apache-2.0, BSD, ISC, or clear equivalents. Review weak file-level copyleft before use and record required notices in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). Reject strong/network copyleft.
 
-1. **MIDI generation call outputs only compact JSON.** The dedicated MIDI generation AI call must never emit MIDI binary or any other file format. A deterministic converter turns validated Pydantic models into the `.mid` file.
-2. **Pydantic V2 is the single source of truth.** Use Pydantic models instead of dataclasses everywhere. All structured LLM outputs are validated by Pydantic before use.
-3. **Multi-track MIDI + embedded lyrics from day one.** Generated MIDI must contain multiple tracks, and lyric meta events whenever lyrics are present (not all songs have lyrics).
-4. **Meta values are hard constraints.** When tempo, key, time signature, instrumentation (etc.) are supplied to the generation call, the model must obey them. Missing meta is resolved upstream before the generation call runs.
-5. **Closed-source-compatible licenses only.** Prefer permissive licenses (MIT, Apache 2.0, BSD, ISC, or clear equivalents). Weak, file-level copyleft such as MPL-2.0 is allowed only after review confirms that its obligations stay confined to the covered dependency files and cannot require disclosure of Melos source. Record required notices and exact source locations in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). No AGPL, GPL, or other strong/network copyleft.
+## Strategic-to-tactical handoff
 
-## Code style (deviations only — defaults assumed)
+- The strategic lead and pack own scope, directives, architecture boundaries, research gates, risks, causal dependencies, suggested high-level order, and final acceptance.
+- The implementation lead inspects live code, proposes execution-sized slices and actual order, discusses them with the user, and retains integration and replanning responsibility.
+- Create tasks, issues, branches, PRs, or sub-agent assignments only after the plan is agreed and the relevant action is authorized.
+- Give execution sub-agents bounded concrete assignments and use the least expensive capable model/effort. They surface surprises rather than changing scope or replanning the wider effort.
 
-- Prefer well-maintained open-license libraries behind interfaces (thin wrappers OK; heavy shoehorns not).
-- Follow Clean Architecture + Uncle Bob / ArjanCodes principles (high cohesion, depend on abstractions, IO at the edges).
-- Full checklist: [`docs/engineering/code-quality.md`](docs/engineering/code-quality.md).
+## Delivery governance
 
-## Always / Ask-first / Never
+- A human is the only authority that merges to `main`.
+- **Active topology:** one feature spine from `main`, with implementation-lead-defined leaf PRs into the spine. The implementation lead may squash-merge clean, green leaf PRs; the final spine PR to `main` requires human merge.
+- Request GitHub Copilot review first with `gh pr edit PR-NUMBER --add-reviewer @copilot`; use `review-pr` if Copilot is unavailable, then a fresh bounded review sub-agent if needed. Self-review is not the independent gate.
+- Follow the full CI, HEAD-matched review, reply/resolve, re-request-until-clean, and stop loop in [`docs/engineering/workflow.md`](docs/engineering/workflow.md).
+- Only a PR to `main` may use `Closes #N`; leaf PRs reference issues without closing them.
 
-- **Always:** research the best-practice approach and verify library/API syntax against current official docs before writing code; run the self-verify commands before finishing a story; follow [`docs/engineering/workflow.md`](docs/engineering/workflow.md); update any affected docs in the **same** PR.
-- **Ask-first → if you're autonomous, STOP-and-flag instead of asking:** schema changes that affect the public compact JSON contract, a new pattern/refactor beyond the task, or anything risky/ambiguous/large.
-- **Never:** commit secrets or `.env`; force-push without asking; merge on red/absent CI or unresolved in-scope review comments; break `main`; add paid services beyond the sanctioned LLM API (OpenRouter); add speculative generality ("might need it later").
+## Working rules
 
-## Dependencies
+- Prefer maintained libraries behind narrow interfaces when they beat hand-rolling. Research representation standards before inventing a Melos-specific language.
+- Follow Clean Architecture: the domain imports no framework, file-format, DAW, plugin, or storage implementation.
+- Update affected docs in the same PR and follow [`docs/engineering/workflow.md`](docs/engineering/workflow.md).
+- Ask first—or stop and flag when autonomous—before changing active scope, final acceptance, a public contract or architecture boundary, adding a paid service, adopting a schema before its required research gate, or starting a broad refactor.
+- Never commit secrets, force-push without approval, merge to `main`, integrate on red/absent CI, add speculative adapters, or implement deferred items from the inactive-directions record.
 
-**Add packages yourself when they clearly beat hand-rolling — no need to stop.** Reach for the stdlib or an already-installed package first; if you add one, vet it: widely used, actively maintained, closed-source-compatible, and a fit for the stack. Prefer permissive licenses. A weak, file-level copyleft dependency needs an explicit review of source-disclosure and distribution obligations plus a matching [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) entry. Reject anything that could require disclosure of Melos source. Prefer existing libraries over custom code; put most libraries behind interfaces.
+## Build spec reading order
 
-## Build spec (read `docs/build-brief.md` first — this list is the reading order)
+1. [`docs/features/semantic-composition/brief.md`](docs/features/semantic-composition/brief.md) — active scope and invariants
+2. [`docs/features/semantic-composition/design.md`](docs/features/semantic-composition/design.md) — architecture boundaries, research gates, risks, and advisory approach
+3. [`docs/features/semantic-composition/acceptance.md`](docs/features/semantic-composition/acceptance.md) — stable final completion contract
+4. [`docs/decisions/inactive-directions.md`](docs/decisions/inactive-directions.md) — superseded and deferred directions that must not leak into active work
+5. [`docs/engineering/workflow.md`](docs/engineering/workflow.md) — strategic handoff and delivery governance
+6. [`docs/engineering/code-quality.md`](docs/engineering/code-quality.md) — code standards
 
-- [`docs/build-brief.md`](docs/build-brief.md) — What we're building, scope, non-negotiables
-- [`docs/acceptance.md`](docs/acceptance.md) — Verifiable done criteria
-- [`docs/tech-stack.md`](docs/tech-stack.md) — Locked stack and rationale
-- [`docs/data-model.md`](docs/data-model.md) — Domain models and compact JSON contract
-- [`docs/engineering/workflow.md`](docs/engineering/workflow.md) — How to plan and ship
-- [`docs/engineering/code-quality.md`](docs/engineering/code-quality.md) — Code standards
+The completed MVP pack lives in [`docs/archive/mvp/`](docs/archive/mvp/README.md). Read it only when investigating shipped behavior or historical acceptance evidence.

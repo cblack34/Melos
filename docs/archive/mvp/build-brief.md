@@ -1,4 +1,6 @@
-# Build Brief
+# MVP Build Brief (Historical)
+
+> **Status: completed and archived.** This file records the original prompt-to-MIDI MVP contract. It is evidence and context, not an active instruction set. Active development is governed by [`../../features/semantic-composition/brief.md`](../../features/semantic-composition/brief.md).
 
 _Read this first, then the rest of the docs in the order listed in `AGENTS.md`. The goal: an agent reads `docs/` and builds the app unattended._
 
@@ -49,7 +51,7 @@ These are desired capabilities. The agent is free to define intermediate milesto
    When tempo, key, time signature, instrumentation, or similar values are supplied to the generation call, the model must obey them. Missing values are resolved by upstream steps or earlier AI/tool calls so the generation call always receives a complete package.
 
 5. **Dependency license policy**  
-   Keep Melos closed-source-compatible. Prefer permissive licenses (MIT, Apache 2.0, BSD, ISC, and clear equivalents). Weak, file-level copyleft such as MPL-2.0 is allowed after review confirms that disclosure obligations remain limited to the covered dependency files; record notices and corresponding source locations in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md). No AGPL, GPL, or other strong/network copyleft that could require Melos source disclosure.
+   Keep Melos closed-source-compatible. Prefer permissive licenses (MIT, Apache 2.0, BSD, ISC, and clear equivalents). Weak, file-level copyleft such as MPL-2.0 is allowed after review confirms that disclosure obligations remain limited to the covered dependency files; record notices and corresponding source locations in [`THIRD_PARTY_NOTICES.md`](../../../THIRD_PARTY_NOTICES.md). No AGPL, GPL, or other strong/network copyleft that could require Melos source disclosure.
 
 ## Definition of done
 

@@ -1,4 +1,6 @@
-# Acceptance & How to Run
+# MVP Acceptance Record (Historical)
+
+> **Status: completed and archived.** These checks remain useful as regression evidence, but they are not the active feature acceptance contract. See [`../../features/semantic-composition/acceptance.md`](../../features/semantic-composition/acceptance.md).
 
 The build is done when the run commands work and every box below holds. Verify by hand in the running product except where a pure-logic test is noted.
 
@@ -13,7 +15,7 @@ The build is done when the run commands work and every box below holds. Verify b
 docker compose up --build
 ```
 
-The self-verify commands (lint, typecheck, test, build) live in [`AGENTS.md`](../AGENTS.md) — that block is canonical; all of it must pass.
+The self-verify commands (lint, typecheck, test, build) live in [`AGENTS.md`](../../../AGENTS.md) — that block remains canonical; all of it must pass.
 
 ## Verification record
 
@@ -43,7 +45,7 @@ Manual and artifact verification collected 2026-07-30 through 2026-07-31:
 
 - [x] No code path allows the MIDI-generation LLM call to write a `.mid` file directly.
 - [x] All structured LLM outputs are validated by Pydantic V2 models before side effects occur.
-- [x] Dependency licenses are closed-source-compatible; reviewed weak, file-level copyleft is documented in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md), and no strong/network copyleft is introduced.
+- [x] Dependency licenses are closed-source-compatible; reviewed weak, file-level copyleft is documented in [`THIRD_PARTY_NOTICES.md`](../../../THIRD_PARTY_NOTICES.md), and no strong/network copyleft is introduced.
 
 ## Not in this build
 

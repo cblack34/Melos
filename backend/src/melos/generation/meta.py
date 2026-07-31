@@ -43,7 +43,7 @@ class MetaResolver:
         model_settings: ModelSettings | None = None,
     ) -> None:
         # Ollama (local) enforces json_schema natively; ToolOutput is the
-        # portable default elsewhere (see docs/tech-stack.md).
+        # portable default elsewhere (see docs/archive/mvp/tech-stack.md).
         output_type = NativeOutput(ResolvedMeta) if use_native_output else ResolvedMeta
         self._agent = Agent(
             model,

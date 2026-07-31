@@ -1,7 +1,7 @@
 # Selectable models for the generation/meta AI calls, and the per-model quirks
 # that let this file (not code) capture what a model needs. Adding, removing,
-# or retuning a model is usually just editing this file — see docs/tech-stack.md
-# for what each field does and why. A model omitted from here still works via
+# or retuning a model is usually just editing this file — see
+# docs/archive/mvp/tech-stack.md for the shipped rationale. A model omitted from here still works via
 # the code-based defaults in generation/llm.py; this file is additive.
 
 providers:

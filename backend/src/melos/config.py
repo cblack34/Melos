@@ -7,7 +7,7 @@ code, the repo, or this settings class). That real-environment read means a
 project `.env` file only reaches the app under `docker compose` (its
 `env_file:` directive sets real container env vars); for a direct `uv run`
 invocation, export `OPENROUTER_API_KEY` in your shell instead. Model choices
-and rationale: docs/tech-stack.md.
+and shipped rationale: docs/archive/mvp/tech-stack.md.
 """
 
 from pathlib import Path
