@@ -80,22 +80,22 @@ def _programs(names: list[str]) -> dict[int, str]:
 _MIN_SUNG_PITCH, _MAX_SUNG_PITCH = 48, 81  # C3-A5
 _MAX_SUNG_SPAN = 24  # two octaves
 
-# DEFERRED TO PER-SECTION GENERATION — see issue #39. Flip back to True there.
+# DEFERRED TO THE WHOLE-SONG SEMANTIC LYRIC MODEL — see issue #39 and the
+# active semantic-composition pack. Do not restore this legacy check by adding
+# per-section composition calls; that direction is explicitly inactive.
 #
 # "One vocal track sings the supplied lyrics complete and in order" cannot be
-# met one-shot for a real song: measured on a 404-word request, the model
-# emitted 10/10 correct sections but sang only 72% of the words (it thins
-# repeated choruses rather than truncating), burning 61k output tokens. The
-# check then rejected it three times and the user got a 502 costing ~$2.70.
+# used to validate a real song whose lead role is distributed across vocal
+# tracks. A 404-word request produced five lyric-bearing tracks and 61k output
+# tokens; the closest single track held 72% of the normalized text, so this
+# check rejected evidence it did not know how to combine.
 #
-# The fix is generating one section per call, where each check covers ~40 words
-# and is reliable. Until then the completeness comparison is skipped, which is
-# a real loss: supplied lyrics come back *incomplete and unflagged*, at odds
-# with non-negotiable #4. Everything else about lyrics stays enforced — they
-# may only appear on vocal tracks, a vocal track is still required when lyrics
-# are supplied, sung range is still checked, and requested sections must still
-# match. `scripts/quality_run.py` also still verifies completeness end to end,
-# so it stays the canary for when this can be turned back on.
+# The active fix assigns stable source tokens exactly once as primary across all
+# vocal parts in one whole-song semantic score. Until that replaces this
+# validator, completeness is unproven and the comparison remains disabled.
+# Everything else about lyrics stays enforced: they may only appear on vocal
+# tracks, a vocal track is required when lyrics are supplied, sung range is
+# checked, and requested sections must match.
 ENFORCE_LYRIC_COMPLETENESS = False
 
 
