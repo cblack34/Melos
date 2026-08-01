@@ -17,6 +17,8 @@ from typing import Annotated, Literal, Protocol, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from melos.domain.music import KeyName
+
 EntityId = Annotated[
     str,
     Field(
@@ -25,6 +27,7 @@ EntityId = Annotated[
         pattern=r"^[a-z][a-z0-9-]*$",
     ),
 ]
+InstrumentId = EntityId
 StringIndex = Annotated[int, Field(ge=0, le=5)]
 NoteIndex = Annotated[int, Field(ge=0)]
 
@@ -208,6 +211,7 @@ class GuitarPart(SemanticModel):
     family: Literal["guitar"] = "guitar"
     id: EntityId
     name: str = Field(min_length=1, max_length=80)
+    instrument: InstrumentId
     tuning: Literal["standard"] = "standard"
     pattern_uses: tuple[GuitarPatternUse, ...] = Field(
         min_length=1, max_length=_MAX_COLLECTION
@@ -258,6 +262,7 @@ class MelodicPart(SemanticModel):
     family: Literal["melodic"] = "melodic"
     id: EntityId
     name: str = Field(min_length=1, max_length=80)
+    instrument: InstrumentId
     phrases: tuple[MelodicPhrase, ...] = Field(min_length=1, max_length=_MAX_COLLECTION)
 
 
@@ -316,6 +321,7 @@ class VocalPart(SemanticModel):
     family: Literal["vocal"] = "vocal"
     id: EntityId
     name: str = Field(min_length=1, max_length=80)
+    instrument: InstrumentId
     phrases: tuple[VocalPhrase, ...] = Field(min_length=1, max_length=_MAX_COLLECTION)
 
 
@@ -345,6 +351,7 @@ class GuitarBoundaryUse(SemanticModel):
     """A guitar pattern application that intentionally crosses a form boundary."""
 
     id: EntityId
+    operation: Literal["replace"] = "replace"
     part_id: EntityId
     pattern_id: EntityId
     from_occurrence_id: EntityId
@@ -370,10 +377,11 @@ class RealizationIdentity(SemanticModel):
 class SemanticScore(SemanticModel):
     """The one canonical whole-song composition artifact."""
 
-    schema_version: Literal["0.1.0"] = "0.1.0"
+    schema_version: Literal["0.2.0"] = "0.2.0"
     id: EntityId
     title: str = Field(min_length=1, max_length=200)
     tempo_bpm: float = Field(ge=20, le=400)
+    key: KeyName
     meter: Meter
     form: tuple[FormOccurrence, ...] = Field(min_length=1, max_length=64)
     user_directives: tuple[IntentStatement, ...] = Field(
@@ -555,6 +563,23 @@ class SemanticScore(SemanticModel):
             if duration_ratio.denominator != 1:
                 raise ValueError(
                     "boundary use duration must contain complete pattern repetitions"
+                )
+
+        for part_id in {boundary.part_id for boundary in self.boundary_uses}:
+            intervals = sorted(
+                (
+                    boundary.start.value,
+                    boundary.start.value + boundary.duration.value,
+                )
+                for boundary in self.boundary_uses
+                if boundary.part_id == part_id
+            )
+            if any(
+                previous[1] > following[0]
+                for previous, following in pairwise(intervals)
+            ):
+                raise ValueError(
+                    "replacement boundary uses for one part cannot overlap"
                 )
 
     def _validate_lyrics(
