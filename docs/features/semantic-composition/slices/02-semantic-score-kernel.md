@@ -98,6 +98,8 @@ the wrong family.
   hash stability, pattern reuse, form and reference failures, boundary rules,
   lyric coverage/order, non-primary assignments, pronunciation/display
   separation, immutability, and the forbidden-import boundary.
+- Full local verification passes with 259 backend tests and 20 frontend tests,
+  plus backend lint/format/type checks and frontend lint/typecheck/build.
 
 ## Stop conditions
 
