@@ -615,12 +615,9 @@ class SemanticScore(SemanticModel):
                 "every singable lyric token must have exactly one primary assignment: "
                 f"{missing_or_duplicate}"
             )
-        ordered_primary = sorted(primary_performances, key=lambda item: item[0])
-        if any(
-            previous[0] >= following[0]
-            for previous, following in pairwise(ordered_primary)
-        ):
-            raise ValueError("primary lyric assignments need distinct ordered onsets")
+        ordered_primary = sorted(
+            primary_performances, key=lambda item: (item[0], item[1])
+        )
         performed_indexes = [source_index for _, source_index, _ in ordered_primary]
         expected_indexes = [token.source_index for token in expected_primary]
         if performed_indexes != expected_indexes:

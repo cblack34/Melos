@@ -426,6 +426,15 @@ def test_lyric_tokens_are_occurrence_scoped_in_global_song_source_order() -> Non
     )
 
 
+def test_primary_lyrics_may_start_simultaneously_across_vocal_parts() -> None:
+    data = fixture_data()
+    data["parts"][3]["phrases"][0]["start"] = beat(8)
+
+    fixture = SemanticScore.model_validate(data)
+
+    assert fixture.display_lyrics == "We rise!"
+
+
 def test_non_primary_lyrics_and_immutable_display_tokens_are_legal() -> None:
     fixture = score()
     lead = cast(VocalPart, fixture.parts[2])

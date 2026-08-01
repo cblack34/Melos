@@ -96,15 +96,16 @@ the wrong family.
   repetitions.
 - The canonical fixture serializes to 4,194 UTF-8 JSON bytes and hashes to
   `3779234210e259397d403311980981997426977a147305eebcdf7730c3a113d3`.
-  Its generated JSON Schema is 13,665 bytes and exposes the three-family
+  Its generated JSON Schema is 13,770 bytes and exposes the three-family
   discriminator map.
-- Twenty pure tests cover exact timing, schema discrimination, round-trip and
-  hash stability, pattern reuse, form and reference failures, boundary rules,
-  lyric coverage/order, non-primary assignments, pronunciation/display
-  separation, immutability, non-finite-number rejection, and the
+- Twenty-one pure tests cover exact timing, schema discrimination, round-trip
+  and hash stability, pattern reuse, form and reference failures, boundary rules,
+  lyric coverage/order including simultaneous cross-part handoffs, non-primary
+  assignments, pronunciation/display separation, immutability,
+  non-finite-number rejection, and the
   forbidden-import boundary. Canonical hashing also refuses non-standard JSON
   `NaN` and infinity values if validation is explicitly bypassed.
-- Full local verification passes with 263 backend tests and 20 frontend tests,
+- Full local verification passes with 264 backend tests and 20 frontend tests,
   plus backend lint/format/type checks and frontend lint/typecheck/build.
 
 ## Stop conditions
