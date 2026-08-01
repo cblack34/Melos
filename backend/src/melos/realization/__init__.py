@@ -12,7 +12,7 @@ from collections import defaultdict
 from collections.abc import Mapping
 from fractions import Fraction
 from hashlib import sha256
-from itertools import pairwise
+from itertools import groupby, pairwise
 from types import MappingProxyType
 from typing import Literal
 
@@ -364,39 +364,60 @@ def _bound_guitar_attacks(attacks: tuple[_RawAttack, ...]) -> tuple[_RawAttack, 
             attack.string_index,
         ),
     )
-    coalesced: list[_RawAttack] = []
-    for attack in ordered:
-        if (
-            coalesced
-            and coalesced[-1].performance_tick == attack.performance_tick
-            and coalesced[-1].pitch == attack.pitch
-        ):
-            previous = coalesced[-1]
-            coalesced[-1] = previous.model_copy(
-                update={
-                    "nominal_end_tick": max(
-                        previous.nominal_end_tick, attack.nominal_end_tick
-                    ),
-                    "velocity": max(previous.velocity, attack.velocity),
-                }
-            )
-        else:
-            coalesced.append(attack)
-
     next_attack_by_pitch: dict[int, int] = {}
+    next_attack_by_string: dict[int, int] = {}
     bounded: list[_RawAttack] = []
-    for attack in reversed(coalesced):
-        next_tick = next_attack_by_pitch.get(attack.pitch)
-        end_tick = attack.nominal_end_tick
-        if next_tick is not None:
-            end_tick = min(end_tick, next_tick)
-        if end_tick <= attack.performance_tick:
-            raise RealizationError(
-                "same-pitch guitar attacks cannot have zero duration"
+    grouped_by_tick = [
+        tuple(group)
+        for _, group in groupby(ordered, key=lambda attack: attack.performance_tick)
+    ]
+    for simultaneous in reversed(grouped_by_tick):
+        bounded_simultaneous: list[_RawAttack] = []
+        for attack in simultaneous:
+            end_tick = min(
+                attack.nominal_end_tick,
+                next_attack_by_pitch.get(attack.pitch, attack.nominal_end_tick),
+                next_attack_by_string.get(attack.string_index, attack.nominal_end_tick),
             )
-        bounded.append(attack.model_copy(update={"nominal_end_tick": end_tick}))
-        next_attack_by_pitch[attack.pitch] = attack.performance_tick
-    return tuple(reversed(bounded))
+            if end_tick <= attack.performance_tick:
+                raise RealizationError(
+                    "retriggered guitar attacks cannot have zero duration"
+                )
+            bounded_attack = attack.model_copy(update={"nominal_end_tick": end_tick})
+            if (
+                bounded_simultaneous
+                and bounded_simultaneous[-1].pitch == bounded_attack.pitch
+            ):
+                previous = bounded_simultaneous[-1]
+                bounded_simultaneous[-1] = previous.model_copy(
+                    update={
+                        "nominal_end_tick": max(
+                            previous.nominal_end_tick,
+                            bounded_attack.nominal_end_tick,
+                        ),
+                        "velocity": max(previous.velocity, bounded_attack.velocity),
+                    }
+                )
+            else:
+                bounded_simultaneous.append(bounded_attack)
+
+        bounded.extend(bounded_simultaneous)
+        for attack in simultaneous:
+            next_attack_by_pitch[attack.pitch] = attack.performance_tick
+            next_attack_by_string[attack.string_index] = attack.performance_tick
+
+    return tuple(
+        sorted(
+            bounded,
+            key=lambda attack: (
+                attack.performance_tick,
+                attack.pitch,
+                attack.canonical_tick,
+                attack.source_id,
+                attack.string_index,
+            ),
+        )
+    )
 
 
 def _realize_melodic(part: MelodicPart, recipe: _TrackRecipe) -> Track:

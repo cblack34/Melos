@@ -82,14 +82,16 @@ Pending human playback: `/private/tmp/melos-semantic-realization-gcad.mid`.
 
 First playback finding: the six-tick sweep and shallow velocity contour still sounded like uniform downstrokes, and every pattern hit carried effectively the same weight. In response, the recipe doubles the string interval to twelve ticks, increases first-contact emphasis, makes upstrokes lighter, and the canonical fixture declares primary emphasis on beats 2 and 4 with secondary emphasis on beat 1. A regenerated playback check is required.
 
+Second playback finding: at 60 BPM the revised string attacks and direction are clearly audible, confirming that this is appropriately the performance MIDI rather than canonical score timing. The emphasis strength still needs a human-directed adjustment. DAW inspection also exposed notes from one physical string ringing through that string's next fretted attack. The realization diagnostic reproduced 18 same-string overlaps; attacks are now bounded by both the next use of their physical string and the next use of their MIDI pitch while different strings within the chord remain free to ring together. Another regenerated playback check is required after the emphasis adjustment.
+
 ## Automated evidence
 
 - Representative canonical JSON: 4,517 UTF-8 bytes.
 - Generated schema: 14,529 compact JSON bytes.
 - Semantic-score hash: `79f640f083755e3381986ce9349d8ffa86c98b1d5f2a076b47cf508465a25342`.
 - Realization-recipe hash: `95c568d151f428c7a16f1a5a9bb3d2a91df92dffce7fc4fd432a7a073b068138`.
-- Expanded-song hash: `d2d973514b5647ab2d0efc4b52a7e3f9cc8d285c3af3f7784e18a445faf9ee3d`.
-- MIDI artifact: 1,218 bytes, SHA-256 `624c8f09d0d3874a65c58f41ad7af9f44a6afd9cd77abdbecd6c48c112126af9`.
+- Expanded-song hash: `9d3ed4265470eb1037864699a5e6e8071451bc858bd2575581dd37228244c6b3`.
+- Pending regenerated MIDI artifact: 1,235 bytes, SHA-256 `476c07b733707f1a0ab53d22468c03a1d83e4322f5318c26c22a2344638406e7`.
 - The representative result contains 120 guitar attacks and four tracks: guitar, melody, lead vocal, and answer vocal.
 - Full local verification initially passed with 275 backend tests and 20 frontend tests. Copilot identified silent truncation when an articulation multiplier produced a fractional tick; realization now rejects that case and a focused regression pins it. Its HEAD-matched re-review then found that boundary replacement still had a default even though the operation must be explicit; the field is now required and omission is rejected. A suppressed wording comment also correctly noted that the shared key-signature set should not claim format independence, so its module description now names the narrower contract without changing the type. The previous complete gate run passed with 276 backend tests and 20 frontend tests; another complete run, updated CI, and clean re-review remain pending for these final review corrections.
 

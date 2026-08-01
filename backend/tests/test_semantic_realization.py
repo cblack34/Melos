@@ -286,6 +286,21 @@ def test_boundary_replaces_ordinary_attacks_and_bounds_equal_pitches_by_pitch() 
     )
 
 
+def test_guitar_notes_stop_before_the_next_attack_on_the_same_string() -> None:
+    by_string: dict[int, list[Any]] = {}
+    realized = realize_score(representative_score())
+    for attack in realized.attacks:
+        if attack.part_id == "guitar":
+            by_string.setdefault(attack.string_index, []).append(attack)
+    for string_attacks in by_string.values():
+        ordered = sorted(string_attacks, key=lambda attack: attack.performance_onset)
+        assert all(
+            round((previous.performance_onset + previous.duration) * 480)
+            <= round(following.performance_onset * 480)
+            for previous, following in pairwise(ordered)
+        )
+
+
 def test_exact_simultaneous_same_pitch_attacks_coalesce_deterministically() -> None:
     common = {
         "part_id": "guitar",
@@ -335,12 +350,12 @@ def test_realization_is_deterministic_and_exports_display_lyrics() -> None:
         "95c568d151f428c7a16f1a5a9bb3d2a91df92dffce7fc4fd432a7a073b068138"
     )
     assert first.song_hash == (
-        "d2d973514b5647ab2d0efc4b52a7e3f9cc8d285c3af3f7784e18a445faf9ee3d"
+        "9d3ed4265470eb1037864699a5e6e8071451bc858bd2575581dd37228244c6b3"
     )
     midi_bytes = export_song(first.song)
     assert midi_bytes == export_song(second.song)
     assert hashlib.sha256(midi_bytes).hexdigest() == (
-        "624c8f09d0d3874a65c58f41ad7af9f44a6afd9cd77abdbecd6c48c112126af9"
+        "476c07b733707f1a0ab53d22468c03a1d83e4322f5318c26c22a2344638406e7"
     )
     midi = mido.MidiFile(file=BytesIO(midi_bytes))
     lyric_events = [
