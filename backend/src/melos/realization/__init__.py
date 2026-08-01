@@ -51,6 +51,8 @@ _GUITAR_DURATION = {
     "power-chord": 360,
 }
 _GUITAR_VELOCITY = {"open": 0, "muted": -8, "palm-muted": -4, "power-chord": 4}
+_GUITAR_DIRECTION_VELOCITY = {"down": 0, "up": -8}
+_GUITAR_EMPHASIS_VELOCITY = {"none": 0, "secondary": 4, "primary": 12}
 
 
 class RealizationError(ValueError):
@@ -73,6 +75,7 @@ class GuitarAttack(_FrozenModel):
     velocity: int
     string_index: int
     direction: Literal["down", "up"]
+    emphasis: Literal["none", "secondary", "primary"]
 
 
 class RealizationResult(_FrozenModel):
@@ -102,8 +105,8 @@ _RECIPES: Mapping[str, _Recipe] = MappingProxyType(
     {
         "semantic-realization-v1": _Recipe(
             version="semantic-realization-v1",
-            string_offset_ticks=6,
-            attack_velocities=(96, 91, 86, 81, 76, 71),
+            string_offset_ticks=12,
+            attack_velocities=(108, 94, 86, 80, 76, 72),
             instruments=(
                 _TrackRecipe(instrument="acoustic-guitar", program=25),
                 _TrackRecipe(instrument="lead-synth", program=80),
@@ -124,6 +127,7 @@ class _RawAttack(_FrozenModel):
     velocity: int
     string_index: int
     direction: Literal["down", "up"]
+    emphasis: Literal["none", "secondary", "primary"]
 
 
 def realize_score(score: SemanticScore) -> RealizationResult:
@@ -267,6 +271,7 @@ def _realize_guitar(
             velocity=attack.velocity,
             string_index=attack.string_index,
             direction=attack.direction,
+            emphasis=attack.emphasis,
         )
         for attack in bounded
     )
@@ -327,6 +332,8 @@ def _expand_pattern(
                         attack_index % len(recipe.attack_velocities)
                     ]
                     + _GUITAR_VELOCITY[step.articulation]
+                    + _GUITAR_DIRECTION_VELOCITY[step.direction]
+                    + _GUITAR_EMPHASIS_VELOCITY[step.emphasis]
                 )
                 attacks.append(
                     _RawAttack(
@@ -340,6 +347,7 @@ def _expand_pattern(
                         velocity=velocity,
                         string_index=string_index,
                         direction=step.direction,
+                        emphasis=step.emphasis,
                     )
                 )
     return attacks
@@ -444,9 +452,15 @@ def _performance_note(
         note.onset, "note onset"
     )
     canonical_duration = _beat_tick(note.duration, "note duration")
+    scaled_duration = canonical_duration * _ARTICULATION_DURATION[note.articulation]
+    if scaled_duration.denominator != 1:
+        raise RealizationError(
+            f"{note.articulation} articulation duration does not align to the "
+            f"{TICKS_PER_BEAT}-tick beat grid"
+        )
     duration_tick = max(
         1,
-        int(canonical_duration * _ARTICULATION_DURATION[note.articulation]),
+        scaled_duration.numerator,
     )
     velocity = _clamp_velocity(
         _DYNAMIC_VELOCITY[note.dynamic] + _ARTICULATION_VELOCITY[note.articulation]
@@ -547,6 +561,8 @@ def _recipe_hash(recipe: _Recipe) -> str:
         },
         "guitar_duration": _GUITAR_DURATION,
         "guitar_velocity": _GUITAR_VELOCITY,
+        "guitar_direction_velocity": _GUITAR_DIRECTION_VELOCITY,
+        "guitar_emphasis_velocity": _GUITAR_EMPHASIS_VELOCITY,
     }
     return _json_hash(payload)
 

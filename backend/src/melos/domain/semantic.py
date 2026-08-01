@@ -137,6 +137,7 @@ class GuitarStrumStep(SemanticModel):
 
     onset: Beat
     direction: Literal["down", "up"]
+    emphasis: Literal["none", "secondary", "primary"] = "none"
     articulation: Literal["open", "muted", "palm-muted", "power-chord"] = "open"
     sounding_strings: tuple[StringIndex, ...] | None = Field(
         default=None,

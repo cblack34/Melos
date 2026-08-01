@@ -80,16 +80,18 @@ Render the production semantic G-C-Am-D fixture with a recorded DAW/instrument. 
 
 Pending human playback: `/private/tmp/melos-semantic-realization-gcad.mid`.
 
+First playback finding: the six-tick sweep and shallow velocity contour still sounded like uniform downstrokes, and every pattern hit carried effectively the same weight. In response, the recipe doubles the string interval to twelve ticks, increases first-contact emphasis, makes upstrokes lighter, and the canonical fixture declares primary emphasis on beats 2 and 4 with secondary emphasis on beat 1. A regenerated playback check is required.
+
 ## Automated evidence
 
-- Representative canonical JSON: 4,398 UTF-8 bytes.
-- Generated schema: 14,434 compact JSON bytes.
-- Semantic-score hash: `1216e2cc29c419c885f7851f81d25d52a7b4259bc00f6381e46a8ff539a3adfd`.
-- Realization-recipe hash: `0c6dd7f30cd7d34f5864a51982b2c8a260eec6978639016ecbeb8e12da9b6cb9`.
-- Expanded-song hash: `ae0e76a2d77554105bc87e803a517736857eeb68c0982a5663365f52b390be0e`.
-- MIDI artifact: 1,218 bytes, SHA-256 `fcc9b7683badf40b759629f31cca404c05073c9c46b792ec08fe4ce23928ca29`.
+- Representative canonical JSON: 4,517 UTF-8 bytes.
+- Generated schema: 14,537 compact JSON bytes.
+- Semantic-score hash: `79f640f083755e3381986ce9349d8ffa86c98b1d5f2a076b47cf508465a25342`.
+- Realization-recipe hash: `95c568d151f428c7a16f1a5a9bb3d2a91df92dffce7fc4fd432a7a073b068138`.
+- Expanded-song hash: `d2d973514b5647ab2d0efc4b52a7e3f9cc8d285c3af3f7784e18a445faf9ee3d`.
+- MIDI artifact: 1,218 bytes, SHA-256 `624c8f09d0d3874a65c58f41ad7af9f44a6afd9cd77abdbecd6c48c112126af9`.
 - The representative result contains 120 guitar attacks and four tracks: guitar, melody, lead vocal, and answer vocal.
-- Full local verification passes with 275 backend tests and 20 frontend tests, plus backend lint/format/type checks and frontend lint/typecheck/build. GitHub CI and independent review remain pending publication.
+- Full local verification initially passed with 275 backend tests and 20 frontend tests. Copilot then identified silent truncation when an articulation multiplier produced a fractional tick; realization now rejects that case and a focused regression pins it. Post-review verification passes with 276 backend tests and 20 frontend tests, plus every backend lint/format/type and frontend lint/typecheck/build gate. Updated CI and clean re-review remain pending.
 
 ## Delivery
 

@@ -65,11 +65,23 @@ def representative_score_data() -> dict[str, Any]:
                 "id": "dduudu",
                 "duration": beat(4),
                 "steps": [
-                    {"onset": beat(0), "direction": "down"},
-                    {"onset": beat(1), "direction": "down"},
+                    {
+                        "onset": beat(0),
+                        "direction": "down",
+                        "emphasis": "secondary",
+                    },
+                    {
+                        "onset": beat(1),
+                        "direction": "down",
+                        "emphasis": "primary",
+                    },
                     {"onset": beat(3, 2), "direction": "up"},
                     {"onset": beat(5, 2), "direction": "up"},
-                    {"onset": beat(3), "direction": "down"},
+                    {
+                        "onset": beat(3),
+                        "direction": "down",
+                        "emphasis": "primary",
+                    },
                     {"onset": beat(7, 2), "direction": "up"},
                 ],
             }
@@ -232,6 +244,7 @@ def test_guitar_recipe_has_standard_tuning_direction_offsets_and_velocity_contou
     realized = realize_score(representative_score())
     attacks = [attack for attack in realized.attacks if attack.part_id == "guitar"]
     first_down = [attack for attack in attacks if attack.canonical_onset == 0]
+    accented_down = [attack for attack in attacks if attack.canonical_onset == 1]
     first_up = [attack for attack in attacks if attack.canonical_onset == 1.5]
 
     assert [attack.pitch for attack in first_down] == [43, 47, 50, 55, 59, 67]
@@ -239,8 +252,11 @@ def test_guitar_recipe_has_standard_tuning_direction_offsets_and_velocity_contou
     assert [attack.string_index for attack in first_up] == [5, 4, 3, 2, 1, 0]
     assert [
         attack.performance_onset - attack.canonical_onset for attack in first_down
-    ] == pytest.approx([0, 0.0125, 0.025, 0.0375, 0.05, 0.0625])
-    assert [attack.velocity for attack in first_down] == [96, 91, 86, 81, 76, 71]
+    ] == pytest.approx([0, 0.025, 0.05, 0.075, 0.1, 0.125])
+    assert [attack.velocity for attack in first_down] == [112, 98, 90, 84, 80, 76]
+    assert [attack.velocity for attack in accented_down] == [120, 106, 98, 92, 88, 84]
+    assert [attack.velocity for attack in first_up] == [100, 86, 78, 72, 68, 64]
+    assert {attack.emphasis for attack in accented_down} == {"primary"}
 
 
 def test_boundary_replaces_ordinary_attacks_and_bounds_equal_pitches_by_pitch() -> None:
@@ -276,6 +292,7 @@ def test_exact_simultaneous_same_pitch_attacks_coalesce_deterministically() -> N
         "performance_tick": 486,
         "pitch": 64,
         "direction": "down",
+        "emphasis": "none",
     }
     bounded = _bound_guitar_attacks(
         (
@@ -311,18 +328,18 @@ def test_realization_is_deterministic_and_exports_display_lyrics() -> None:
     assert first.recipe_hash == second.recipe_hash
     assert first.song_hash == second.song_hash
     assert first.score_hash == (
-        "1216e2cc29c419c885f7851f81d25d52a7b4259bc00f6381e46a8ff539a3adfd"
+        "79f640f083755e3381986ce9349d8ffa86c98b1d5f2a076b47cf508465a25342"
     )
     assert first.recipe_hash == (
-        "0c6dd7f30cd7d34f5864a51982b2c8a260eec6978639016ecbeb8e12da9b6cb9"
+        "95c568d151f428c7a16f1a5a9bb3d2a91df92dffce7fc4fd432a7a073b068138"
     )
     assert first.song_hash == (
-        "ae0e76a2d77554105bc87e803a517736857eeb68c0982a5663365f52b390be0e"
+        "d2d973514b5647ab2d0efc4b52a7e3f9cc8d285c3af3f7784e18a445faf9ee3d"
     )
     midi_bytes = export_song(first.song)
     assert midi_bytes == export_song(second.song)
     assert hashlib.sha256(midi_bytes).hexdigest() == (
-        "fcc9b7683badf40b759629f31cca404c05073c9c46b792ec08fe4ce23928ca29"
+        "624c8f09d0d3874a65c58f41ad7af9f44a6afd9cd77abdbecd6c48c112126af9"
     )
     midi = mido.MidiFile(file=BytesIO(midi_bytes))
     lyric_events = [
@@ -389,4 +406,14 @@ def test_realization_rejects_non_grid_score_time_without_rounding() -> None:
     melody["duration"] = beat(1, 7)
 
     with pytest.raises(RealizationError, match=r"480.*grid"):
+        realize_score(SemanticScore.model_validate(data))
+
+
+def test_realization_rejects_articulation_that_creates_a_fractional_tick() -> None:
+    data = representative_score_data()
+    melody = data["parts"][1]["phrases"][0]["notes"][2]
+    melody["duration"] = beat(1, 480)
+    melody["articulation"] = "staccato"
+
+    with pytest.raises(RealizationError, match=r"staccato.*480.*grid"):
         realize_score(SemanticScore.model_validate(data))

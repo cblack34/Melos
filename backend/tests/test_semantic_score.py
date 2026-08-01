@@ -250,7 +250,7 @@ def test_score_json_round_trip_and_hash_are_deterministic() -> None:
     assert SemanticScore.model_validate_json(fixture.model_dump_json()) == fixture
     assert semantic_score_hash(fixture) == semantic_score_hash(score())
     assert semantic_score_hash(fixture) == (
-        "d249373bb16c0ab682c939140bef9a1aad1cb997a8d20f0f75a7ab0a10f1d43b"
+        "129c1ab061c45294177d5c42b86e87ff9ffcccf0f0105c5ca6809bc0b303e471"
     )
 
 
