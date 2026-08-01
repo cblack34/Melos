@@ -1,1 +1,1 @@
-"""Pure domain layer: song models and contracts. No framework or IO imports."""
+"""Pure semantic and performance domain contracts; no framework or IO imports."""
