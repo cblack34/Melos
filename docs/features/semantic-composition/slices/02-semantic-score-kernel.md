@@ -84,6 +84,10 @@ the wrong family.
   references one guitar-strum definition from both choruses, includes explicit
   melodic material, distributes primary lyrics across two vocal parts, and
   records a legal third-part harmony copy.
+- Lyric tokens retain one zero-based source index across the whole-song token
+  stream. `occurrence_id` scopes each token to a form occurrence without
+  resetting that index, preserving the acceptance contract's unambiguous
+  source order across the song.
 - User directives and composer enhancements occupy separate collections.
 - Guitar uses retain chord symbols, explicit fret/string voicings, and selected
   sounding-string checks without storing MIDI pitches or performance offsets.
@@ -94,13 +98,13 @@ the wrong family.
   `3779234210e259397d403311980981997426977a147305eebcdf7730c3a113d3`.
   Its generated JSON Schema is 13,665 bytes and exposes the three-family
   discriminator map.
-- Nineteen pure tests cover exact timing, schema discrimination, round-trip and
+- Twenty pure tests cover exact timing, schema discrimination, round-trip and
   hash stability, pattern reuse, form and reference failures, boundary rules,
   lyric coverage/order, non-primary assignments, pronunciation/display
   separation, immutability, non-finite-number rejection, and the
   forbidden-import boundary. Canonical hashing also refuses non-standard JSON
   `NaN` and infinity values if validation is explicitly bypassed.
-- Full local verification passes with 262 backend tests and 20 frontend tests,
+- Full local verification passes with 263 backend tests and 20 frontend tests,
   plus backend lint/format/type checks and frontend lint/typecheck/build.
 
 ## Stop conditions

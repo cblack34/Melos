@@ -382,6 +382,45 @@ def test_primary_lyrics_require_complete_unique_ordered_coverage(
         SemanticScore.model_validate(data)
 
 
+def test_lyric_tokens_are_occurrence_scoped_in_global_song_source_order() -> None:
+    data = fixture_data()
+    data["lyric_tokens"].append(
+        {
+            "id": "token-again",
+            "occurrence_id": "chorus-two",
+            "source_index": 3,
+            "display_text": " Again",
+        }
+    )
+    data["parts"][2]["phrases"].append(
+        {
+            "id": "lead-chorus-two",
+            "occurrence_id": "chorus-two",
+            "start": beat(16),
+            "notes": [
+                {
+                    "onset": beat(0),
+                    "duration": beat(1),
+                    "pitch": {"step": "G", "octave": 4},
+                }
+            ],
+            "lyric_assignments": [
+                {
+                    "id": "primary-again",
+                    "token_id": "token-again",
+                    "role": "primary",
+                    "syllables": [{"text": "Again", "note_indexes": [0]}],
+                }
+            ],
+        }
+    )
+
+    fixture = SemanticScore.model_validate(data)
+
+    assert fixture.display_lyrics == "We rise! Again"
+    assert [token.source_index for token in fixture.lyric_tokens] == [0, 1, 2, 3]
+
+
 def test_non_primary_lyrics_and_immutable_display_tokens_are_legal() -> None:
     fixture = score()
     lead = cast(VocalPart, fixture.parts[2])
