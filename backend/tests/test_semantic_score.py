@@ -214,6 +214,7 @@ def fixture_data() -> dict[str, Any]:
         "boundary_uses": [
             {
                 "id": "chorus-boundary",
+                "operation": "replace",
                 "part_id": "guitar",
                 "pattern_id": "guitar-strum",
                 "from_occurrence_id": "chorus-one",
@@ -381,6 +382,11 @@ def test_boundary_use_requires_adjacency_and_a_crossing(
 
 
 def test_boundary_replacement_operation_is_explicit_and_cannot_overlap() -> None:
+    data = fixture_data()
+    del data["boundary_uses"][0]["operation"]
+    with pytest.raises(ValidationError, match="operation"):
+        SemanticScore.model_validate(data)
+
     data = fixture_data()
     data["boundary_uses"][0]["operation"] = "add"
     with pytest.raises(ValidationError, match="replace"):

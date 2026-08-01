@@ -352,7 +352,7 @@ class GuitarBoundaryUse(SemanticModel):
     """A guitar pattern application that intentionally crosses a form boundary."""
 
     id: EntityId
-    operation: Literal["replace"] = "replace"
+    operation: Literal["replace"]
     part_id: EntityId
     pattern_id: EntityId
     from_occurrence_id: EntityId

@@ -199,6 +199,7 @@ def representative_score_data() -> dict[str, Any]:
         "boundary_uses": [
             {
                 "id": "boundary-strum",
+                "operation": "replace",
                 "part_id": "guitar",
                 "pattern_id": "dduudu",
                 "from_occurrence_id": "verse",
