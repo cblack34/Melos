@@ -97,7 +97,8 @@ class _TrackRecipe(_FrozenModel):
 class _Recipe(_FrozenModel):
     version: str
     string_offset_ticks: int
-    attack_velocities: tuple[int, ...]
+    down_attack_velocities: tuple[int, ...]
+    up_attack_velocities: tuple[int, ...]
     instruments: tuple[_TrackRecipe, ...]
 
 
@@ -106,7 +107,8 @@ _RECIPES: Mapping[str, _Recipe] = MappingProxyType(
         "semantic-realization-v1": _Recipe(
             version="semantic-realization-v1",
             string_offset_ticks=12,
-            attack_velocities=(108, 94, 86, 80, 76, 72),
+            down_attack_velocities=(108, 94, 82, 68, 60, 54),
+            up_attack_velocities=(108, 94, 86, 80, 76, 72),
             instruments=(
                 _TrackRecipe(instrument="acoustic-guitar", program=25),
                 _TrackRecipe(instrument="lead-synth", program=80),
@@ -318,6 +320,11 @@ def _expand_pattern(
             ordered = (
                 selected if step.direction == "down" else tuple(reversed(selected))
             )
+            attack_velocities = (
+                recipe.down_attack_velocities
+                if step.direction == "down"
+                else recipe.up_attack_velocities
+            )
             for attack_index, string_index in enumerate(ordered):
                 pitch = _STANDARD_TUNING[string_index] + voicing[string_index]
                 if not 0 <= pitch <= 127:
@@ -328,9 +335,7 @@ def _expand_pattern(
                     canonical_tick + attack_index * recipe.string_offset_ticks
                 )
                 velocity = _clamp_velocity(
-                    recipe.attack_velocities[
-                        attack_index % len(recipe.attack_velocities)
-                    ]
+                    attack_velocities[attack_index % len(attack_velocities)]
                     + _GUITAR_VELOCITY[step.articulation]
                     + _GUITAR_DIRECTION_VELOCITY[step.direction]
                     + _GUITAR_EMPHASIS_VELOCITY[step.emphasis]
@@ -567,7 +572,8 @@ def _recipe_hash(recipe: _Recipe) -> str:
         "version": recipe.version,
         "ticks_per_beat": TICKS_PER_BEAT,
         "string_offset_ticks": recipe.string_offset_ticks,
-        "attack_velocities": recipe.attack_velocities,
+        "down_attack_velocities": recipe.down_attack_velocities,
+        "up_attack_velocities": recipe.up_attack_velocities,
         "instruments": {
             track.instrument: {
                 "program": track.program,

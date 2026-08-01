@@ -254,10 +254,26 @@ def test_guitar_recipe_has_standard_tuning_direction_offsets_and_velocity_contou
     assert [
         attack.performance_onset - attack.canonical_onset for attack in first_down
     ] == pytest.approx([0, 0.025, 0.05, 0.075, 0.1, 0.125])
-    assert [attack.velocity for attack in first_down] == [112, 98, 90, 84, 80, 76]
-    assert [attack.velocity for attack in accented_down] == [120, 106, 98, 92, 88, 84]
+    assert [attack.velocity for attack in first_down] == [112, 98, 86, 72, 64, 58]
+    assert [attack.velocity for attack in accented_down] == [120, 106, 94, 80, 72, 66]
     assert [attack.velocity for attack in first_up] == [100, 86, 78, 72, 68, 64]
     assert {attack.emphasis for attack in accented_down} == {"primary"}
+
+
+def test_even_downstroke_intent_does_not_infer_a_meter_accent() -> None:
+    data = representative_score_data()
+    data["patterns"][0]["steps"] = [
+        {"onset": beat(index), "direction": "down"} for index in range(4)
+    ]
+    realized = realize_score(SemanticScore.model_validate(data))
+    g_downstrokes = [
+        attack for attack in realized.attacks if attack.source_id == "g-use"
+    ]
+
+    assert [
+        [attack.velocity for attack in g_downstrokes if attack.canonical_onset == beat]
+        for beat in range(4)
+    ] == [[108, 94, 82, 68, 60, 54]] * 4
 
 
 def test_boundary_replaces_ordinary_attacks_and_bounds_equal_pitches_by_pitch() -> None:
@@ -347,15 +363,15 @@ def test_realization_is_deterministic_and_exports_display_lyrics() -> None:
         "79f640f083755e3381986ce9349d8ffa86c98b1d5f2a076b47cf508465a25342"
     )
     assert first.recipe_hash == (
-        "95c568d151f428c7a16f1a5a9bb3d2a91df92dffce7fc4fd432a7a073b068138"
+        "89b96f3b07a407f93c71efc96e5cfd5607063006071f149d4b96f961cd27ad35"
     )
     assert first.song_hash == (
-        "9d3ed4265470eb1037864699a5e6e8071451bc858bd2575581dd37228244c6b3"
+        "44c68d203990f380a3c703c14a4b29b187b324947e25b0d94f75153ec2391449"
     )
     midi_bytes = export_song(first.song)
     assert midi_bytes == export_song(second.song)
     assert hashlib.sha256(midi_bytes).hexdigest() == (
-        "476c07b733707f1a0ab53d22468c03a1d83e4322f5318c26c22a2344638406e7"
+        "fcc51fd8ba5d6cc3a74b6673d360d4ee87868085d45b35bacf61560af3320d2c"
     )
     midi = mido.MidiFile(file=BytesIO(midi_bytes))
     lyric_events = [
