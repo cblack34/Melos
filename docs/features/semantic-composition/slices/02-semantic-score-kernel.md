@@ -94,11 +94,13 @@ the wrong family.
   `3779234210e259397d403311980981997426977a147305eebcdf7730c3a113d3`.
   Its generated JSON Schema is 13,665 bytes and exposes the three-family
   discriminator map.
-- Sixteen pure tests cover exact timing, schema discrimination, round-trip and
+- Nineteen pure tests cover exact timing, schema discrimination, round-trip and
   hash stability, pattern reuse, form and reference failures, boundary rules,
   lyric coverage/order, non-primary assignments, pronunciation/display
-  separation, immutability, and the forbidden-import boundary.
-- Full local verification passes with 259 backend tests and 20 frontend tests,
+  separation, immutability, non-finite-number rejection, and the
+  forbidden-import boundary. Canonical hashing also refuses non-standard JSON
+  `NaN` and infinity values if validation is explicitly bypassed.
+- Full local verification passes with 262 backend tests and 20 frontend tests,
   plus backend lint/format/type checks and frontend lint/typecheck/build.
 
 ## Stop conditions

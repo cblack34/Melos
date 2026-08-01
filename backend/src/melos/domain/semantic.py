@@ -37,6 +37,7 @@ class SemanticModel(BaseModel):
     """Closed, immutable base for canonical semantic data."""
 
     model_config = ConfigDict(
+        allow_inf_nan=False,
         extra="forbid",
         frozen=True,
         populate_by_name=True,
@@ -667,6 +668,7 @@ def semantic_score_hash(score: SemanticScore) -> str:
     """Hash the exact canonical JSON form, including compact timing aliases."""
     payload = json.dumps(
         score.model_dump(mode="json", by_alias=True),
+        allow_nan=False,
         sort_keys=True,
         separators=(",", ":"),
     ).encode()

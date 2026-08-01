@@ -1,5 +1,6 @@
 import ast
 from collections.abc import Callable
+from math import inf, nan
 from pathlib import Path
 from typing import Any, cast
 
@@ -245,9 +246,20 @@ def test_score_json_round_trip_and_hash_are_deterministic() -> None:
     assert semantic_score_hash(fixture) == (
         "3779234210e259397d403311980981997426977a147305eebcdf7730c3a113d3"
     )
-    assert semantic_score_hash(fixture) == (
-        "3779234210e259397d403311980981997426977a147305eebcdf7730c3a113d3"
-    )
+
+
+@pytest.mark.parametrize("tempo_bpm", [nan, inf, -inf])
+def test_score_and_canonical_hash_reject_non_finite_numbers(
+    tempo_bpm: float,
+) -> None:
+    data = fixture_data()
+    data["tempo_bpm"] = tempo_bpm
+    with pytest.raises(ValidationError, match="finite number"):
+        SemanticScore.model_validate(data)
+
+    bypassed = score().model_copy(update={"tempo_bpm": tempo_bpm})
+    with pytest.raises(ValueError, match="Out of range float values"):
+        semantic_score_hash(bypassed)
 
 
 def test_part_schema_is_discriminated_and_cross_family_extra_is_rejected() -> None:
