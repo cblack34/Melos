@@ -150,14 +150,25 @@ def _end_strings_at_next_attack(
     events: list[PerformanceEvent],
 ) -> tuple[PerformanceEvent, ...]:
     """Let a string ring until its next attack, including across section markers."""
+    ordered_events = sorted(
+        events,
+        key=lambda event: (
+            event.start,
+            event.canonical_chord_onset,
+            event.string_index,
+            event.pitch,
+        ),
+    )
     next_attack_by_string: dict[StringIndex, float] = {}
     bounded_events: list[PerformanceEvent] = []
-    for event in reversed(events):
+    for event in reversed(ordered_events):
         next_attack = next_attack_by_string.get(event.string_index)
         duration = event.duration
         if next_attack is not None:
             duration = min(duration, next_attack - event.start)
-        bounded_events.append(event.model_copy(update={"duration": duration}))
+        event_data = event.model_dump()
+        event_data["duration"] = duration
+        bounded_events.append(PerformanceEvent.model_validate(event_data))
         next_attack_by_string[event.string_index] = event.start
     return tuple(reversed(bounded_events))
 

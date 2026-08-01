@@ -34,7 +34,7 @@ Adapt concepts rather than code:
   pronunciation, and primary/non-primary performance assignments.
 
 The guitar feasibility result must support this direction before the gate is
-accepted. Production type and field design remains a later, separately approved
+accepted. Production type and field design remain a later, separately approved
 public-contract decision.
 
 ## Candidate decision matrix

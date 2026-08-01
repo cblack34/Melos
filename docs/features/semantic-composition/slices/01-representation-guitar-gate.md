@@ -59,7 +59,9 @@ Out of scope:
 - [x] Identical inputs produce identical event data and hashes.
 - [x] GarageBand playback evidence records the instrument and limitations.
 - [x] Research and feasibility evidence support one joint recommendation.
-- [ ] The full repository verification suite and independent PR review pass.
+- [x] The full repository verification suite passes.
+- Independent review and integration are tracked on the live PR rather than
+  self-attested in this document.
 - [x] Human review approves the recommendation before production adoption.
 
 ## Stop conditions

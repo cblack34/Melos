@@ -12,6 +12,7 @@ from feasibility.guitar_midi_fixture import (
 from feasibility.guitar_strum import (
     GuitarFixture,
     PerformanceEvent,
+    PerformanceRecipe,
     StrumPattern,
     StrumStep,
     event_hash,
@@ -84,6 +85,32 @@ def test_canonical_chord_onsets_are_separate_from_per_string_offsets() -> None:
     assert {event.canonical_chord_onset for event in first_down} == {4}
     offsets = sorted(event.start - event.canonical_chord_onset for event in first_down)
     assert offsets == pytest.approx([0, 0.0125, 0.025, 0.0375, 0.05])
+
+
+def test_overlapping_strum_spreads_are_bounded_in_chronological_order() -> None:
+    standard = standard_gcad_fixture()
+    fixture = GuitarFixture(
+        pattern=StrumPattern(
+            name="close-strokes",
+            steps=(
+                StrumStep(onset_in_bar=0, direction="down"),
+                StrumStep(onset_in_bar=0.01, direction="up"),
+            ),
+        ),
+        recipe=PerformanceRecipe(
+            version="close-strokes-v1",
+            per_string_offset_beats=0.09,
+            attack_velocities=(96,),
+            note_duration_beats=1,
+        ),
+        bars=(standard.bars[0],),
+    )
+
+    events = expand_guitar_fixture(fixture)
+
+    assert [event.start for event in events] == sorted(event.start for event in events)
+    assert all(event.duration > 0 for event in events)
+    _assert_no_same_string_overlaps(events)
 
 
 def test_identical_fixture_has_identical_events_and_hash() -> None:
