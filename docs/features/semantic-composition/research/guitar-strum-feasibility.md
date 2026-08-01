@@ -1,7 +1,7 @@
 # Deterministic guitar-strum feasibility
 
-> **Status: automated and manual evidence complete; representation approval
-> pending.** This
+> **Status: automated and manual evidence complete; representation direction
+> approved on 2026-07-31.** This
 > record belongs to the revisable tactical slice in
 > [`../slices/01-representation-guitar-gate.md`](../slices/01-representation-guitar-gate.md)
 > and is subordinate to the active strategic pack. The experimental types under

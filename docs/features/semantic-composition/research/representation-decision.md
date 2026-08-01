@@ -1,6 +1,7 @@
 # Semantic representation research and recommendation
 
-> **Status: recommendation pending human review.** This evidence record belongs
+> **Status: direction approved by the human owner on 2026-07-31; production
+> schema remains a later gate.** This evidence record belongs
 > to the revisable tactical slice in
 > [`../slices/01-representation-guitar-gate.md`](../slices/01-representation-guitar-gate.md)
 > and is subordinate to the active strategic pack. It approves no production
@@ -83,8 +84,15 @@ No new dependency is justified, so this slice changes neither lockfile nor
 `mido` are already locked and reviewed. Strong/network-copyleft projects are
 reference material only; no source, types, or algorithms are copied or derived.
 
-## Human decision requested
+## Human decision
 
-Approve or reject this direction after reviewing it together with the guitar
-feasibility record. Approval authorizes planning a later production-schema
-slice; it does not authorize that schema or any public-contract change here.
+The human owner approved the Melos-owned Pydantic semantic-score direction and
+the decision to add no representation dependency on 2026-07-31, after reviewing
+the guitar feasibility result.
+
+This approval does not decide whether the production score will use one
+aggregate model with instrument-specific intent types and adapters, multiple
+instrument-focused internal models, or another composition that preserves the
+same architecture boundary. That type and field design belongs to a later
+production-schema slice. This decision authorizes planning that slice; it does
+not authorize a public-contract change here.

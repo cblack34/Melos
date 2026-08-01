@@ -60,7 +60,7 @@ Out of scope:
 - [x] GarageBand playback evidence records the instrument and limitations.
 - [x] Research and feasibility evidence support one joint recommendation.
 - [ ] The full repository verification suite and independent PR review pass.
-- [ ] Human review approves the recommendation before production adoption.
+- [x] Human review approves the recommendation before production adoption.
 
 ## Stop conditions
 
