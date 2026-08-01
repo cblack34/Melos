@@ -419,6 +419,11 @@ def test_lyric_tokens_are_occurrence_scoped_in_global_song_source_order() -> Non
 
     assert fixture.display_lyrics == "We rise! Again"
     assert [token.source_index for token in fixture.lyric_tokens] == [0, 1, 2, 3]
+    token_schema = SemanticScore.model_json_schema()["$defs"]["LyricToken"]
+    assert (
+        "whole-song source stream"
+        in token_schema["properties"]["source_index"]["description"]
+    )
 
 
 def test_non_primary_lyrics_and_immutable_display_tokens_are_legal() -> None:

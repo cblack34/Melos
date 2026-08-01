@@ -330,8 +330,13 @@ class LyricToken(SemanticModel):
 
     id: EntityId
     occurrence_id: EntityId
-    # Position in the whole-song source stream; occurrence scope does not reset it.
-    source_index: int = Field(ge=0)
+    source_index: int = Field(
+        ge=0,
+        description=(
+            "Zero-based position in the whole-song source stream; occurrence scope "
+            "does not reset it."
+        ),
+    )
     display_text: str = Field(min_length=1, max_length=160)
     is_singable: bool = True
 
