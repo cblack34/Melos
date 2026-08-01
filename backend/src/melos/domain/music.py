@@ -1,4 +1,4 @@
-"""Format-independent musical value types shared by domain models."""
+"""Named musical key signatures shared by domain models."""
 
 from typing import Literal
 
