@@ -1,0 +1,396 @@
+"""Behavioral tests for the isolated whole-song semantic composer boundary."""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Callable
+from copy import deepcopy
+from typing import Any
+
+import pytest
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, ToolCallPart
+from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+from melos.domain.generator import GenerationRequest
+from melos.domain.semantic import Meter, SemanticScore
+from melos.generation.meta import ResolvedMeta
+from melos.generation.semantic_composer import (
+    PydanticAISemanticScoreComposer,
+    composition_input_from,
+)
+from melos.realization import realize_score
+
+_COMPOSITION_INPUT_PREFIX = "Whole-song composition input (JSON):\n"
+
+
+def beat(numerator: int, denominator: int = 1) -> dict[str, int]:
+    return {"n": numerator, "d": denominator}
+
+
+def score_data(**overrides: object) -> dict[str, object]:
+    note = {
+        "onset": beat(0),
+        "duration": beat(1),
+        "pitch": {"step": "C", "octave": 4},
+    }
+    vocal_notes = [
+        {**note, "onset": beat(0)},
+        {**note, "onset": beat(1), "pitch": {"step": "D", "octave": 4}},
+    ]
+    score: dict[str, object] = {
+        "id": "whole-song",
+        "title": "Whole Song",
+        "tempo_bpm": 96,
+        "key": "G",
+        "meter": {"numerator": 4, "denominator": 4},
+        "form": [
+            {"id": "verse", "label": "Verse", "start": beat(0), "duration": beat(4)},
+            {"id": "chorus", "label": "Chorus", "start": beat(4), "duration": beat(4)},
+        ],
+        "user_directives": [
+            {"id": "user-restraint", "text": "Keep the chorus restrained."}
+        ],
+        "composer_enhancements": [
+            {"id": "composer-detail", "text": "Use a sparse pickup."}
+        ],
+        "parts": [
+            {
+                "family": "melodic",
+                "id": "melody",
+                "name": "Melody",
+                "instrument": "lead-synth",
+                "phrases": [
+                    {
+                        "id": "melody-phrase",
+                        "occurrence_id": "verse",
+                        "start": beat(0),
+                        "notes": [note],
+                    }
+                ],
+            },
+            {
+                "family": "melodic",
+                "id": "counterline",
+                "name": "Counterline",
+                "instrument": "lead-synth",
+                "phrases": [
+                    {
+                        "id": "counterline-phrase",
+                        "occurrence_id": "chorus",
+                        "start": beat(4),
+                        "notes": [note],
+                    }
+                ],
+            },
+            {
+                "family": "vocal",
+                "id": "lead-vocal",
+                "name": "Lead vocal",
+                "instrument": "voice",
+                "phrases": [
+                    {
+                        "id": "verse-vocal",
+                        "occurrence_id": "verse",
+                        "start": beat(0),
+                        "notes": vocal_notes,
+                        "lyric_assignments": [
+                            {
+                                "id": "first",
+                                "token_id": "token-first",
+                                "role": "primary",
+                                "syllables": [{"text": "First", "note_indexes": [0]}],
+                            },
+                            {
+                                "id": "line-one",
+                                "token_id": "token-line-one",
+                                "role": "primary",
+                                "syllables": [{"text": "line", "note_indexes": [1]}],
+                            },
+                        ],
+                    },
+                    {
+                        "id": "chorus-vocal",
+                        "occurrence_id": "chorus",
+                        "start": beat(4),
+                        "notes": vocal_notes,
+                        "lyric_assignments": [
+                            {
+                                "id": "second",
+                                "token_id": "token-second",
+                                "role": "primary",
+                                "syllables": [{"text": "Second", "note_indexes": [0]}],
+                            },
+                            {
+                                "id": "line-two",
+                                "token_id": "token-line-two",
+                                "role": "primary",
+                                "syllables": [{"text": "line", "note_indexes": [1]}],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ],
+        "lyric_tokens": [
+            {
+                "id": "token-first",
+                "occurrence_id": "verse",
+                "source_index": 0,
+                "display_text": "First",
+            },
+            {
+                "id": "token-line-one",
+                "occurrence_id": "verse",
+                "source_index": 1,
+                "display_text": " line",
+            },
+            {
+                "id": "token-second",
+                "occurrence_id": "chorus",
+                "source_index": 2,
+                "display_text": " Second",
+            },
+            {
+                "id": "token-line-two",
+                "occurrence_id": "chorus",
+                "source_index": 3,
+                "display_text": " line",
+            },
+        ],
+        "realization": {"recipe_version": "semantic-realization-v1"},
+    }
+    score.update(overrides)
+    return score
+
+
+def drop_lyrics(data: dict[str, object]) -> None:
+    """Keep the score schema-valid while removing the requested display text."""
+    data["lyric_tokens"] = []
+    parts = data["parts"]
+    assert isinstance(parts, list)
+    data["parts"] = parts[:2]
+
+
+def composition() -> tuple[GenerationRequest, ResolvedMeta]:
+    request = GenerationRequest.model_validate(
+        {
+            "prompt": "a warm folk song",
+            "tempo_bpm": 96,
+            "key": "G",
+            "time_signature": {"numerator": 4, "denominator": 4},
+            "include_instruments": ["Flute"],
+            "exclude_instruments": ["Trumpet"],
+            "lyrics": (
+                "[Verse]\n"
+                "First line\n"
+                "{Keep the chorus restrained.}\n"
+                "[Chorus]\n"
+                "Second line"
+            ),
+        }
+    )
+    return (
+        request,
+        ResolvedMeta(
+            tempo_bpm=96,
+            key="G",
+            time_signature={"numerator": 4, "denominator": 4},
+        ),
+    )
+
+
+def text_parts(messages: list[ModelMessage]) -> list[str]:
+    contents: list[str] = []
+    for message in messages:
+        if not isinstance(message, ModelRequest):
+            continue
+        for part in message.parts:
+            content = getattr(part, "content", None)
+            if isinstance(content, str):
+                contents.append(content)
+    return contents
+
+
+def whole_song_input(messages: list[str]) -> dict[str, Any]:
+    payload_messages = [
+        message for message in messages if message.startswith(_COMPOSITION_INPUT_PREFIX)
+    ]
+    assert len(payload_messages) == 1
+    payload = json.loads(payload_messages[0].removeprefix(_COMPOSITION_INPUT_PREFIX))
+    assert isinstance(payload, dict)
+    return payload
+
+
+def composer_returning(
+    payloads: list[dict[str, object]], histories: list[list[str]]
+) -> PydanticAISemanticScoreComposer:
+    remaining = list(payloads)
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        histories.append(text_parts(messages))
+        payload = remaining.pop(0) if len(remaining) > 1 else remaining[0]
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, payload)])
+
+    return PydanticAISemanticScoreComposer(
+        FunctionModel(respond), use_native_output=False
+    )
+
+
+@pytest.mark.anyio
+async def test_complete_ordered_context_reaches_one_whole_song_composer() -> None:
+    request, meta = composition()
+    input_data = composition_input_from(request, meta)
+    histories: list[list[str]] = []
+
+    result = await composer_returning([score_data()], histories).compose(input_data)
+
+    assert isinstance(result, SemanticScore)
+    assert len(histories) == 1
+    assert input_data.requested_instruments.include == ("Flute",)
+    assert input_data.requested_instruments.exclude == ("Trumpet",)
+    assert input_data.source.sung_text == request.lyrics_spec.sung_text
+    payload = whole_song_input(histories[0])
+    expected_constraints = input_data.resolved_constraints.model_dump(mode="json")
+    expected_instruments = input_data.requested_instruments.model_dump(mode="json")
+    assert payload["raw_user_content"] == input_data.raw_user_content.model_dump(
+        mode="json"
+    )
+    assert payload["resolved_constraints"] == expected_constraints
+    assert payload["requested_instruments"] == expected_instruments
+    assert payload["source"] == input_data.source.model_dump(mode="json")
+    assert payload["injected_instructions"] == [
+        instruction.model_dump(mode="json")
+        for instruction in input_data.injected_instructions
+    ]
+    assert all(
+        "Compose exactly one complete whole-song SemanticScore." not in message
+        for message in histories[0]
+        if not message.startswith(_COMPOSITION_INPUT_PREFIX)
+    )
+
+
+@pytest.mark.anyio
+async def test_retry_keeps_complete_context_and_never_calls_a_section_composer() -> (
+    None
+):
+    request, meta = composition()
+    input_data = composition_input_from(request, meta)
+    rejected = deepcopy(score_data())
+    rejected["tempo_bpm"] = 120
+    histories: list[list[str]] = []
+
+    result = await composer_returning([rejected, score_data()], histories).compose(
+        input_data
+    )
+
+    assert result.tempo_bpm == 96
+    assert len(histories) == 2
+    for history in histories:
+        payload = whole_song_input(history)
+        assert payload["raw_user_content"] == input_data.raw_user_content.model_dump(
+            mode="json"
+        )
+        assert payload["source"] == input_data.source.model_dump(mode="json")
+        assert all("section composition input" not in message for message in history)
+    assert any(
+        "tempo_bpm must exactly match the resolved constraint: expected 96.0, got 120.0"
+        in prompt
+        for prompt in histories[1]
+    )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (
+            lambda data: data.__setitem__("key", "C"),
+            "key must exactly match the resolved constraint: expected 'G', got 'C'",
+        ),
+        (
+            lambda data: data.__setitem__("user_directives", []),
+            "user_directives must preserve exactly",
+        ),
+        (
+            lambda data: data["form"][1].__setitem__("label", "Bridge"),
+            "form occurrences must match",
+        ),
+        (drop_lyrics, "lyric_tokens must reconstruct the supplied lyrics exactly"),
+        (
+            lambda data: data["lyric_tokens"][0].__setitem__("display_text", "Changed"),
+            "lyric_tokens must reconstruct the supplied lyrics exactly",
+        ),
+    ],
+)
+async def test_represented_user_constraints_are_retried(
+    mutate: Callable[[dict[str, object]], None], message: str
+) -> None:
+    request, meta = composition()
+    input_data = composition_input_from(request, meta)
+    rejected = deepcopy(score_data())
+    mutate(rejected)
+    histories: list[list[str]] = []
+
+    result = await composer_returning([rejected, score_data()], histories).compose(
+        input_data
+    )
+
+    assert result == SemanticScore.model_validate(score_data())
+    assert len(histories) == 2
+    assert any(message in prompt for prompt in histories[1])
+
+
+def test_meta_constraint_feedback_includes_expected_and_actual_values() -> None:
+    request, meta = composition()
+    input_data = composition_input_from(request, meta)
+    score = SemanticScore.model_validate(score_data())
+    rejected = score.model_copy(
+        update={
+            "tempo_bpm": 120,
+            "key": "C",
+            "meter": Meter(numerator=3, denominator=4),
+        }
+    )
+
+    assert input_data.score_violations(rejected)[:3] == [
+        "tempo_bpm must exactly match the resolved constraint: expected 96.0, got 120",
+        "key must exactly match the resolved constraint: expected 'G', got 'C'",
+        "meter must exactly match the resolved time signature: expected 4/4, got 3/4",
+    ]
+
+
+@pytest.mark.anyio
+async def test_raw_content_instructions_and_composer_enhancements_stay_separate() -> (
+    None
+):
+    request, meta = composition()
+    input_data = composition_input_from(request, meta)
+    histories: list[list[str]] = []
+
+    score = await composer_returning([score_data()], histories).compose(input_data)
+
+    assert input_data.raw_user_content.prompt == request.prompt
+    assert input_data.raw_user_content.lyrics == request.lyrics
+    assert input_data.injected_instructions[0].text != request.prompt
+    assert [directive.text for directive in score.user_directives] == [
+        "Keep the chorus restrained."
+    ]
+    assert [enhancement.text for enhancement in score.composer_enhancements] == [
+        "Use a sparse pickup."
+    ]
+    assert score.composer_enhancements[0].text not in input_data.raw_user_content.prompt
+
+
+@pytest.mark.anyio
+async def test_validated_composer_output_is_compatible_with_realization() -> None:
+    request, meta = composition()
+    result = await composer_returning([score_data()], []).compose(
+        composition_input_from(request, meta)
+    )
+
+    realized = realize_score(result)
+    assert [track.name for track in realized.song.tracks] == [
+        "Melody",
+        "Counterline",
+        "Lead vocal",
+    ]
