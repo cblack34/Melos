@@ -152,7 +152,8 @@ GitHub issues are the WIP tracker and source of task-level detail.
 | [#54](https://github.com/cblack34/Melos/issues/54) — Deterministic guitar strumming | Guitar feasibility gate and manual evidence. | None; reviewed with #53 |
 | [#57](https://github.com/cblack34/Melos/issues/57) — Establish the canonical semantic score kernel | Canonical identity, validation, patterns, and lyric ownership. | #53, #54 |
 | [#59](https://github.com/cblack34/Melos/issues/59) — Deterministically realize semantic scores | Semantic-score-to-`Song` realization and playback evidence. | #57 |
-| [#61](https://github.com/cblack34/Melos/issues/61) — Establish the whole-song semantic composer boundary | Current leaf: complete-song model operation and retry seam. | #57, #59 |
+| [#61](https://github.com/cblack34/Melos/issues/61) — Establish the whole-song semantic composer boundary | Complete-song model operation and retry seam. | #57, #59 |
+| [#63](https://github.com/cblack34/Melos/issues/63) — Record immutable whole-song composition experiments | Current leaf: immutable local provenance and Pydantic AI run evidence. | #61 |
 | [#27](https://github.com/cblack34/Melos/issues/27) — Song length as a verified constraint | Acceptance-required target-duration contract through the semantic path. | Whole-song composition boundary |
 | [#39](https://github.com/cblack34/Melos/issues/39) — Distributed lyric completeness | Production use of canonical primary lyric assignments across vocal parts. | Whole-song composition boundary |
 
@@ -160,7 +161,7 @@ GitHub issues are the WIP tracker and source of task-level detail.
 
 - **Topology:** one feature spine with bounded leaf PRs
 - **Spine:** `spine/semantic-composition`
-- **Current leaf:** `feat/61-whole-song-composer-boundary`
+- **Current leaf:** `feat/63-immutable-composition-experiments`
 - **Final PR:** pending final acceptance
 - **Human merge gate:** only the human may physically merge the final PR to
   `main`; agents stop when it is ready

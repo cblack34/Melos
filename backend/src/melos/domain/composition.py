@@ -28,6 +28,14 @@ class ResolvedCompositionConstraints(CompositionModel):
     meter: Meter
 
 
+class RequestedMetaConstraints(CompositionModel):
+    """Optional meta exactly as supplied before the resolver filled any gaps."""
+
+    tempo_bpm: float | None = Field(default=None, ge=20, le=400)
+    key: KeyName | None = None
+    meter: Meter | None = None
+
+
 class RequestedInstrumentConstraints(CompositionModel):
     """Exact requested lists, visible to the composer without GM enforcement."""
 
@@ -47,10 +55,12 @@ class WholeSongCompositionInput(CompositionModel):
     """All and only the context for one complete semantic-score attempt."""
 
     raw_user_content: RawUserContent
+    requested_meta: RequestedMetaConstraints
     resolved_constraints: ResolvedCompositionConstraints
     requested_instruments: RequestedInstrumentConstraints
     source: SongSource
     injected_instructions: tuple[InjectedInstruction, ...] = ()
+    parent_revision_id: str | None = Field(default=None, max_length=96)
 
     def score_violations(self, score: SemanticScore) -> list[str]:
         """Return only contradictions checkable in the current score schema."""
