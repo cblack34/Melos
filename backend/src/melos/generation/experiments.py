@@ -126,6 +126,11 @@ class JsonExperimentRepository:
                 stream.flush()
                 os.fsync(stream.fileno())
             os.link(temporary_path, path)
+            directory_fd = os.open(self._root, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
         except FileExistsError as error:
             raise DuplicateExperimentRunError(
                 f"experiment run already exists: {run.run_id}"

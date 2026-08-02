@@ -842,6 +842,95 @@ async def test_json_repository_round_trips_immutable_sibling_runs(
 
 
 @pytest.mark.anyio
+async def test_json_repository_syncs_file_then_published_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    request, meta = composition()
+    repository = JsonExperimentRepository(tmp_path)
+    events: list[str] = []
+    directory_fds: set[int] = set()
+    original_open = experiments_module.os.open
+    original_fsync = experiments_module.os.fsync
+    original_link = experiments_module.os.link
+
+    def tracked_open(path: object, flags: int, mode: int = 0o777) -> int:
+        fd = original_open(cast(Any, path), flags, mode)
+        if path == tmp_path:
+            directory_fds.add(fd)
+        return fd
+
+    def tracked_fsync(fd: int) -> None:
+        events.append("directory-fsync" if fd in directory_fds else "file-fsync")
+        original_fsync(fd)
+
+    def tracked_link(source: object, destination: object) -> None:
+        events.append("link")
+        original_link(cast(Any, source), cast(Any, destination))
+
+    monkeypatch.setattr(experiments_module.os, "open", tracked_open)
+    monkeypatch.setattr(experiments_module.os, "fsync", tracked_fsync)
+    monkeypatch.setattr(experiments_module.os, "link", tracked_link)
+
+    await composer_returning(
+        [score_data()],
+        [],
+        repository=repository,
+        run_id_factory=lambda: "run-durable",
+    ).compose(composition_input_from(request, meta))
+
+    assert (
+        events.index("file-fsync")
+        < events.index("link")
+        < events.index("directory-fsync")
+    )
+
+
+@pytest.mark.anyio
+async def test_json_repository_fails_closed_and_closes_directory_fd_on_sync_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    request, meta = composition()
+    repository = JsonExperimentRepository(tmp_path)
+    directory_fds: set[int] = set()
+    closed_fds: list[int] = []
+    original_open = experiments_module.os.open
+    original_close = experiments_module.os.close
+    original_fsync = experiments_module.os.fsync
+
+    def tracked_open(path: object, flags: int, mode: int = 0o777) -> int:
+        fd = original_open(cast(Any, path), flags, mode)
+        if path == tmp_path:
+            directory_fds.add(fd)
+        return fd
+
+    def fail_directory_fsync(fd: int) -> None:
+        if fd in directory_fds:
+            raise OSError("directory sync interrupted")
+        original_fsync(fd)
+
+    def tracked_close(fd: int) -> None:
+        if fd in directory_fds:
+            closed_fds.append(fd)
+        original_close(fd)
+
+    monkeypatch.setattr(experiments_module.os, "open", tracked_open)
+    monkeypatch.setattr(experiments_module.os, "fsync", fail_directory_fsync)
+    monkeypatch.setattr(experiments_module.os, "close", tracked_close)
+
+    with pytest.raises(ProvenancePersistenceError, match="failed to persist"):
+        await composer_returning(
+            [score_data()],
+            [],
+            repository=repository,
+            run_id_factory=lambda: "run-unsynced",
+        ).compose(composition_input_from(request, meta))
+
+    assert (tmp_path / "run-unsynced.json").is_file()
+    assert closed_fds == list(directory_fds)
+    assert not list(tmp_path.glob(".run-unsynced.*.tmp"))
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     ("mutate", "message"),
     [
