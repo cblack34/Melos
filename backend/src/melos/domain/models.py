@@ -9,39 +9,7 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-# The 30 key signatures a Standard MIDI File can carry (15 major + 15 minor).
-KeyName = Literal[
-    "Cb",
-    "Gb",
-    "Db",
-    "Ab",
-    "Eb",
-    "Bb",
-    "F",
-    "C",
-    "G",
-    "D",
-    "A",
-    "E",
-    "B",
-    "F#",
-    "C#",
-    "Abm",
-    "Ebm",
-    "Bbm",
-    "Fm",
-    "Cm",
-    "Gm",
-    "Dm",
-    "Am",
-    "Em",
-    "Bm",
-    "F#m",
-    "C#m",
-    "G#m",
-    "D#m",
-    "A#m",
-]
+from melos.domain.music import KeyName
 
 # General MIDI, 0-indexed: programs 120-127 are sound effects (helicopter, ...).
 SOUND_EFFECT_PROGRAMS = frozenset(range(120, 128))

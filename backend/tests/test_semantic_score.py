@@ -20,6 +20,19 @@ def beat(numerator: int, denominator: int = 1) -> dict[str, int]:
     return {"n": numerator, "d": denominator}
 
 
+def nested_keys(value: object) -> set[str]:
+    """Collect mapping keys without matching arbitrary serialized values."""
+    keys: set[str] = set()
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            keys.add(str(key))
+            keys.update(nested_keys(nested))
+    elif isinstance(value, list):
+        for nested in value:
+            keys.update(nested_keys(nested))
+    return keys
+
+
 def fixture_data() -> dict[str, Any]:
     voicing = {
         "chord_symbol": "G",
@@ -37,6 +50,7 @@ def fixture_data() -> dict[str, Any]:
         "id": "whole-song",
         "title": "Whole Song Fixture",
         "tempo_bpm": 120,
+        "key": "G",
         "meter": {"numerator": 4, "denominator": 4},
         "form": [
             {"id": "verse", "label": "Verse", "start": beat(0), "duration": beat(8)},
@@ -82,6 +96,7 @@ def fixture_data() -> dict[str, Any]:
                 "family": "guitar",
                 "id": "guitar",
                 "name": "Acoustic guitar",
+                "instrument": "acoustic-guitar",
                 "pattern_uses": [
                     {
                         "id": "chorus-one-use",
@@ -105,6 +120,7 @@ def fixture_data() -> dict[str, Any]:
                 "family": "melodic",
                 "id": "melody",
                 "name": "Counter melody",
+                "instrument": "lead-synth",
                 "phrases": [
                     {
                         "id": "verse-melody",
@@ -118,6 +134,7 @@ def fixture_data() -> dict[str, Any]:
                 "family": "vocal",
                 "id": "lead-vocal",
                 "name": "Lead vocal",
+                "instrument": "voice",
                 "phrases": [
                     {
                         "id": "lead-chorus",
@@ -145,6 +162,7 @@ def fixture_data() -> dict[str, Any]:
                 "family": "vocal",
                 "id": "answer-vocal",
                 "name": "Answer vocal",
+                "instrument": "voice",
                 "phrases": [
                     {
                         "id": "answer-chorus",
@@ -166,6 +184,7 @@ def fixture_data() -> dict[str, Any]:
                 "family": "vocal",
                 "id": "harmony-vocal",
                 "name": "Harmony vocal",
+                "instrument": "voice",
                 "phrases": [
                     {
                         "id": "harmony-chorus",
@@ -208,6 +227,7 @@ def fixture_data() -> dict[str, Any]:
         "boundary_uses": [
             {
                 "id": "chorus-boundary",
+                "operation": "replace",
                 "part_id": "guitar",
                 "pattern_id": "guitar-strum",
                 "from_occurrence_id": "chorus-one",
@@ -244,8 +264,35 @@ def test_score_json_round_trip_and_hash_are_deterministic() -> None:
     assert SemanticScore.model_validate_json(fixture.model_dump_json()) == fixture
     assert semantic_score_hash(fixture) == semantic_score_hash(score())
     assert semantic_score_hash(fixture) == (
-        "3779234210e259397d403311980981997426977a147305eebcdf7730c3a113d3"
+        "129c1ab061c45294177d5c42b86e87ff9ffcccf0f0105c5ca6809bc0b303e471"
     )
+
+
+def test_schema_020_keeps_key_and_semantic_instrument_identity_canonical() -> None:
+    """GM programs remain a recipe concern, not semantic-score data."""
+    data = fixture_data()
+    data["schema_version"] = "0.2.0"
+    data["key"] = "G"
+    data["parts"][0]["instrument"] = "acoustic-guitar"
+    data["parts"][1]["instrument"] = "lead-synth"
+    for part in data["parts"][2:]:
+        part["instrument"] = "voice"
+
+    fixture = SemanticScore.model_validate(data)
+
+    assert fixture.schema_version == "0.2.0"
+    assert fixture.key == "G"
+    assert [part.instrument for part in fixture.parts] == [
+        "acoustic-guitar",
+        "lead-synth",
+        "voice",
+        "voice",
+        "voice",
+    ]
+    serialized = fixture.model_dump(mode="json")
+    serialized_keys = nested_keys(serialized)
+    assert "program" not in serialized_keys
+    assert "is_vocal" not in serialized_keys
 
 
 @pytest.mark.parametrize("tempo_bpm", [nan, inf, -inf])
@@ -345,6 +392,28 @@ def test_boundary_use_requires_adjacency_and_a_crossing(
     data = fixture_data()
     data["boundary_uses"][0][field] = value
     with pytest.raises(ValidationError, match=message):
+        SemanticScore.model_validate(data)
+
+
+def test_boundary_replacement_operation_is_explicit_and_cannot_overlap() -> None:
+    data = fixture_data()
+    del data["boundary_uses"][0]["operation"]
+    with pytest.raises(ValidationError, match="operation"):
+        SemanticScore.model_validate(data)
+
+    data = fixture_data()
+    data["boundary_uses"][0]["operation"] = "add"
+    with pytest.raises(ValidationError, match="replace"):
+        SemanticScore.model_validate(data)
+
+    data = fixture_data()
+    overlapping = {
+        **data["boundary_uses"][0],
+        "id": "overlapping-boundary",
+        "start": beat(31, 2),
+    }
+    data["boundary_uses"].append(overlapping)
+    with pytest.raises(ValidationError, match="cannot overlap"):
         SemanticScore.model_validate(data)
 
 
@@ -476,6 +545,7 @@ def test_semantic_module_imports_only_standard_library_and_pydantic() -> None:
         "itertools",
         "json",
         "math",
+        "melos.domain.music",
         "typing",
         "pydantic",
     }

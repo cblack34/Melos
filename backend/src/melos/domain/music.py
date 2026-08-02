@@ -1,0 +1,36 @@
+"""Named musical key signatures shared by domain models."""
+
+from typing import Literal
+
+KeyName = Literal[
+    "Cb",
+    "Gb",
+    "Db",
+    "Ab",
+    "Eb",
+    "Bb",
+    "F",
+    "C",
+    "G",
+    "D",
+    "A",
+    "E",
+    "B",
+    "F#",
+    "C#",
+    "Abm",
+    "Ebm",
+    "Bbm",
+    "Fm",
+    "Cm",
+    "Gm",
+    "Dm",
+    "Am",
+    "Em",
+    "Bm",
+    "F#m",
+    "C#m",
+    "G#m",
+    "D#m",
+    "A#m",
+]
