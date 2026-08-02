@@ -57,11 +57,24 @@ class WholeSongCompositionInput(CompositionModel):
         violations: list[str] = []
         constraints = self.resolved_constraints
         if score.tempo_bpm != constraints.tempo_bpm:
-            violations.append(f"tempo_bpm must be exactly {constraints.tempo_bpm}")
+            violations.append(
+                "tempo_bpm must exactly match the resolved constraint: "
+                f"expected {constraints.tempo_bpm}, got {score.tempo_bpm}"
+            )
         if score.key != constraints.key:
-            violations.append(f"key must be exactly {constraints.key!r}")
+            violations.append(
+                "key must exactly match the resolved constraint: "
+                f"expected {constraints.key!r}, got {score.key!r}"
+            )
         if score.meter != constraints.meter:
-            violations.append("meter must exactly match the resolved time signature")
+            expected_meter = (
+                f"{constraints.meter.numerator}/{constraints.meter.denominator}"
+            )
+            actual_meter = f"{score.meter.numerator}/{score.meter.denominator}"
+            violations.append(
+                "meter must exactly match the resolved time signature: "
+                f"expected {expected_meter}, got {actual_meter}"
+            )
 
         requested_sections = [item.name.casefold() for item in self.source.sections]
         if requested_sections:

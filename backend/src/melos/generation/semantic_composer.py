@@ -20,7 +20,11 @@ from melos.generation.observability import progress_hooks
 _OUTPUT_RETRIES = 3
 _INSTRUCTION_ID = "whole-song-semantic-composer"
 _INSTRUCTION_VERSION = "1"
-_INSTRUCTIONS = (
+_AGENT_INSTRUCTIONS = (
+    "Follow the versioned injected instructions in the whole-song composition "
+    "input and return one valid SemanticScore."
+)
+_INJECTED_INSTRUCTIONS = (
     "Compose exactly one complete whole-song SemanticScore. The user content, "
     "resolved constraints, and ordered source markup are supplied as structured "
     "data. Preserve every supplied directive as user_directives; only put new "
@@ -52,7 +56,7 @@ def composition_input_from(
             InjectedInstruction(
                 id=_INSTRUCTION_ID,
                 version=_INSTRUCTION_VERSION,
-                text=_INSTRUCTIONS,
+                text=_INJECTED_INSTRUCTIONS,
             ),
         ),
     )
@@ -74,7 +78,7 @@ class PydanticAISemanticScoreComposer:
         self._agent: Agent[WholeSongCompositionInput, SemanticScore] = Agent(
             model,
             output_type=output_type,
-            instructions=_INSTRUCTIONS,
+            instructions=_AGENT_INSTRUCTIONS,
             deps_type=WholeSongCompositionInput,
             retries={"output": _OUTPUT_RETRIES},
             model_settings=model_settings,

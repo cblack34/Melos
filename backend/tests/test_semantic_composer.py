@@ -10,7 +10,7 @@ from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, Tool
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from melos.domain.generator import GenerationRequest
-from melos.domain.semantic import SemanticScore
+from melos.domain.semantic import Meter, SemanticScore
 from melos.generation.meta import ResolvedMeta
 from melos.generation.semantic_composer import (
     PydanticAISemanticScoreComposer,
@@ -256,6 +256,11 @@ async def test_complete_ordered_context_reaches_one_whole_song_composer() -> Non
         in prompt
     )
     assert '"injected_instructions"' in prompt
+    assert "Compose exactly one complete whole-song SemanticScore." in prompt
+    assert all(
+        "Compose exactly one complete whole-song SemanticScore." not in message
+        for message in histories[0][:-1]
+    )
 
 
 @pytest.mark.anyio
@@ -280,14 +285,21 @@ async def test_retry_keeps_complete_context_and_never_calls_a_section_composer()
         assert '"name":"Chorus"' in complete_context
         assert '"text":"Keep the chorus restrained."' in complete_context
         assert "section composition input" not in complete_context
-    assert any("tempo_bpm must be exactly 96.0" in prompt for prompt in histories[1])
+    assert any(
+        "tempo_bpm must exactly match the resolved constraint: expected 96.0, got 120.0"
+        in prompt
+        for prompt in histories[1]
+    )
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
     ("mutate", "message"),
     [
-        (lambda data: data.__setitem__("key", "C"), "key must be exactly 'G'"),
+        (
+            lambda data: data.__setitem__("key", "C"),
+            "key must exactly match the resolved constraint: expected 'G', got 'C'",
+        ),
         (
             lambda data: data.__setitem__("user_directives", []),
             "user_directives must preserve exactly",
@@ -319,6 +331,25 @@ async def test_represented_user_constraints_are_retried(
     assert result == SemanticScore.model_validate(score_data())
     assert len(histories) == 2
     assert any(message in prompt for prompt in histories[1])
+
+
+def test_meta_constraint_feedback_includes_expected_and_actual_values() -> None:
+    request, meta = composition()
+    input_data = composition_input_from(request, meta)
+    score = SemanticScore.model_validate(score_data())
+    rejected = score.model_copy(
+        update={
+            "tempo_bpm": 120,
+            "key": "C",
+            "meter": Meter(numerator=3, denominator=4),
+        }
+    )
+
+    assert input_data.score_violations(rejected)[:3] == [
+        "tempo_bpm must exactly match the resolved constraint: expected 96.0, got 120",
+        "key must exactly match the resolved constraint: expected 'G', got 'C'",
+        "meter must exactly match the resolved time signature: expected 4/4, got 3/4",
+    ]
 
 
 @pytest.mark.anyio
