@@ -516,33 +516,23 @@ def _primary_display_chunks(tokens: tuple[LyricToken, ...]) -> dict[str, str]:
     for token in tokens:
         by_occurrence[token.occurrence_id].append(token)
     for occurrence_tokens in by_occurrence.values():
-        for index, token in enumerate(occurrence_tokens):
+        previous: LyricToken | None = None
+        leading_text = ""
+        for token in occurrence_tokens:
             if token.is_singable:
+                if leading_text:
+                    chunks[token.id] = leading_text + chunks[token.id]
+                    leading_text = ""
+                previous = token
                 continue
-            previous = next(
-                (
-                    candidate
-                    for candidate in reversed(occurrence_tokens[:index])
-                    if candidate.is_singable
-                ),
-                None,
-            )
             if previous is not None:
                 chunks[previous.id] += token.display_text
                 continue
-            following = next(
-                (
-                    candidate
-                    for candidate in occurrence_tokens[index + 1 :]
-                    if candidate.is_singable
-                ),
-                None,
+            leading_text += token.display_text
+        if leading_text:
+            raise RealizationError(
+                "a lyric occurrence cannot contain only non-singable tokens"
             )
-            if following is None:
-                raise RealizationError(
-                    "a lyric occurrence cannot contain only non-singable tokens"
-                )
-            chunks[following.id] = token.display_text + chunks[following.id]
     return chunks
 
 

@@ -400,6 +400,39 @@ def test_realization_is_deterministic_and_exports_display_lyrics() -> None:
     assert programs == [25, 80, 53, 53]
 
 
+def test_leading_non_singable_lyric_tokens_keep_source_order() -> None:
+    data = representative_score_data()
+    data["lyric_tokens"] = [
+        {
+            "id": "opening-parenthesis",
+            "occurrence_id": "chorus",
+            "source_index": 0,
+            "display_text": "(",
+            "is_singable": False,
+        },
+        {
+            "id": "opening-bracket",
+            "occurrence_id": "chorus",
+            "source_index": 1,
+            "display_text": "[",
+            "is_singable": False,
+        },
+        {**data["lyric_tokens"][0], "source_index": 2},
+        {**data["lyric_tokens"][1], "source_index": 3},
+    ]
+
+    realized = realize_score(SemanticScore.model_validate(data))
+    midi = mido.MidiFile(file=BytesIO(export_song(realized.song)))
+    lyric_events = [
+        message.text
+        for track in midi.tracks
+        for message in track
+        if message.type == "lyrics"
+    ]
+
+    assert lyric_events == ["([We", " rise"]
+
+
 def test_realization_is_the_only_semantic_to_performance_dependency_seam() -> None:
     source = Path(__file__).parents[1] / "src" / "melos" / "realization" / "__init__.py"
     text = source.read_text()
