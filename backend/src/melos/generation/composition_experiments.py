@@ -256,7 +256,7 @@ class CompositionExperimentRecorder:
         elapsed_seconds: float,
         evidence: _RunEvidence,
         final_messages: list[ModelMessage],
-        result_usage: object | None,
+        result_usage: RunUsage | None,
         score: SemanticScore | None,
         terminal_error: Exception | None,
     ) -> ExperimentRun:
@@ -266,7 +266,7 @@ class CompositionExperimentRecorder:
             for response, request in evidence.responses
         )
         usage: _UsageValues | Mapping[str, object] = _aggregate_response_usage(
-            responses
+            responses, attempted_requests=len(evidence.model_requests)
         )
         if isinstance(result_usage, RunUsage):
             usage = result_usage
@@ -472,6 +472,8 @@ def _usage_details(values: Mapping[str, object]) -> dict[str, object]:
 
 def _aggregate_response_usage(
     responses: tuple[ModelResponseEvidence, ...],
+    *,
+    attempted_requests: int,
 ) -> dict[str, object]:
     details: dict[str, int] = {}
     for response in responses:
@@ -479,7 +481,7 @@ def _aggregate_response_usage(
             if isinstance(value, int):
                 details[key] = details.get(key, 0) + value
     return {
-        "requests": len(responses),
+        "requests": attempted_requests,
         "input_tokens": sum(response.usage.input_tokens for response in responses),
         "output_tokens": sum(response.usage.output_tokens for response in responses),
         "cache_write_tokens": sum(

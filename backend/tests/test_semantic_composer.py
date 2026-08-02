@@ -573,6 +573,10 @@ async def test_provider_failure_records_sent_request_and_terminal_error() -> Non
     assert "Whole-song composition input" in run.final_messages_json
     assert len(run.model_requests) == 1
     assert '"output_tools"' in run.model_requests[0].parameters_json
+    assert run.aggregate_usage.requests == 1
+    assert run.aggregate_usage.input_tokens == 0
+    assert run.aggregate_usage.output_tokens == 0
+    assert json.loads(run.aggregate_usage.details_json) == {}
 
 
 @pytest.mark.anyio
