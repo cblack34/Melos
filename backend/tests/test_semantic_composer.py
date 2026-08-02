@@ -29,6 +29,10 @@ def score_data(**overrides: object) -> dict[str, object]:
         "duration": beat(1),
         "pitch": {"step": "C", "octave": 4},
     }
+    vocal_notes = [
+        {**note, "onset": beat(0)},
+        {**note, "onset": beat(1), "pitch": {"step": "D", "octave": 4}},
+    ]
     score: dict[str, object] = {
         "id": "whole-song",
         "title": "Whole Song",
@@ -74,11 +78,93 @@ def score_data(**overrides: object) -> dict[str, object]:
                     }
                 ],
             },
+            {
+                "family": "vocal",
+                "id": "lead-vocal",
+                "name": "Lead vocal",
+                "instrument": "voice",
+                "phrases": [
+                    {
+                        "id": "verse-vocal",
+                        "occurrence_id": "verse",
+                        "start": beat(0),
+                        "notes": vocal_notes,
+                        "lyric_assignments": [
+                            {
+                                "id": "first",
+                                "token_id": "token-first",
+                                "role": "primary",
+                                "syllables": [{"text": "First", "note_indexes": [0]}],
+                            },
+                            {
+                                "id": "line-one",
+                                "token_id": "token-line-one",
+                                "role": "primary",
+                                "syllables": [{"text": "line", "note_indexes": [1]}],
+                            },
+                        ],
+                    },
+                    {
+                        "id": "chorus-vocal",
+                        "occurrence_id": "chorus",
+                        "start": beat(4),
+                        "notes": vocal_notes,
+                        "lyric_assignments": [
+                            {
+                                "id": "second",
+                                "token_id": "token-second",
+                                "role": "primary",
+                                "syllables": [{"text": "Second", "note_indexes": [0]}],
+                            },
+                            {
+                                "id": "line-two",
+                                "token_id": "token-line-two",
+                                "role": "primary",
+                                "syllables": [{"text": "line", "note_indexes": [1]}],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ],
+        "lyric_tokens": [
+            {
+                "id": "token-first",
+                "occurrence_id": "verse",
+                "source_index": 0,
+                "display_text": "First",
+            },
+            {
+                "id": "token-line-one",
+                "occurrence_id": "verse",
+                "source_index": 1,
+                "display_text": " line",
+            },
+            {
+                "id": "token-second",
+                "occurrence_id": "chorus",
+                "source_index": 2,
+                "display_text": " Second",
+            },
+            {
+                "id": "token-line-two",
+                "occurrence_id": "chorus",
+                "source_index": 3,
+                "display_text": " line",
+            },
         ],
         "realization": {"recipe_version": "semantic-realization-v1"},
     }
     score.update(overrides)
     return score
+
+
+def drop_lyrics(data: dict[str, object]) -> None:
+    """Keep the score schema-valid while removing the requested display text."""
+    data["lyric_tokens"] = []
+    parts = data["parts"]
+    assert isinstance(parts, list)
+    data["parts"] = parts[:2]
 
 
 def composition() -> tuple[GenerationRequest, ResolvedMeta]:
@@ -89,6 +175,7 @@ def composition() -> tuple[GenerationRequest, ResolvedMeta]:
             "key": "G",
             "time_signature": {"numerator": 4, "denominator": 4},
             "include_instruments": ["Flute"],
+            "exclude_instruments": ["Trumpet"],
             "lyrics": (
                 "[Verse]\n"
                 "First line\n"
@@ -145,13 +232,27 @@ async def test_complete_ordered_context_reaches_one_whole_song_composer() -> Non
 
     assert isinstance(result, SemanticScore)
     assert len(histories) == 1
+    assert input_data.requested_instruments.include == ("Flute",)
+    assert input_data.requested_instruments.exclude == ("Trumpet",)
+    assert input_data.source.sung_text == request.lyrics_spec.sung_text
     prompt = histories[0][-1]
     assert '"raw_user_content":{"prompt":"a warm folk song"' in prompt
     assert '"resolved_constraints":{"tempo_bpm":96.0,"key":"G"' in prompt
+    assert (
+        '"requested_instruments":{"include":["Flute"],"exclude":["Trumpet"]}' in prompt
+    )
     assert '"line_number":1,"kind":"section","name":"Verse"' in prompt
     assert '"line_number":4,"kind":"section","name":"Chorus"' in prompt
     assert (
         '"line_number":3,"kind":"directive","text":"Keep the chorus restrained."'
+        in prompt
+    )
+    assert (
+        '"line_number":2,"kind":"lyric","id":"lyric-line-2","text":"First line"'
+        in prompt
+    )
+    assert (
+        '"line_number":5,"kind":"lyric","id":"lyric-line-5","text":"Second line"'
         in prompt
     )
     assert '"injected_instructions"' in prompt
@@ -194,6 +295,11 @@ async def test_retry_keeps_complete_context_and_never_calls_a_section_composer()
         (
             lambda data: data["form"][1].__setitem__("label", "Bridge"),
             "form occurrences must match",
+        ),
+        (drop_lyrics, "lyric_tokens must reconstruct the supplied lyrics exactly"),
+        (
+            lambda data: data["lyric_tokens"][0].__setitem__("display_text", "Changed"),
+            "lyric_tokens must reconstruct the supplied lyrics exactly",
         ),
     ],
 )
@@ -245,4 +351,8 @@ async def test_validated_composer_output_is_compatible_with_realization() -> Non
     )
 
     realized = realize_score(result)
-    assert [track.name for track in realized.song.tracks] == ["Melody", "Counterline"]
+    assert [track.name for track in realized.song.tracks] == [
+        "Melody",
+        "Counterline",
+        "Lead vocal",
+    ]

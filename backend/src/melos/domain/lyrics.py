@@ -80,6 +80,7 @@ class SourceDirective(_SourceItem):
 
 class SourceLyricLine(_SourceItem):
     kind: Literal["lyric"] = "lyric"
+    id: str = Field(min_length=1, max_length=80, pattern=r"^lyric-line-[1-9][0-9]*$")
     text: str = Field(min_length=1, max_length=8_000)
 
 
@@ -103,6 +104,13 @@ class SongSource(BaseModel):
     @property
     def directives(self) -> tuple[SourceDirective, ...]:
         return tuple(item for item in self.items if isinstance(item, SourceDirective))
+
+    @property
+    def sung_text(self) -> str:
+        """Match LyricsSpec's normalized sequence of non-markup source lines."""
+        return " ".join(
+            item.text for item in self.items if isinstance(item, SourceLyricLine)
+        )
 
 
 def parse_lyrics(raw: str | None) -> LyricsSpec:
@@ -148,7 +156,13 @@ def parse_song_source(raw: str | None) -> SongSource:
                 SourceDirective(line_number=line_number, text=directive["text"].strip())
             )
         else:
-            items.append(SourceLyricLine(line_number=line_number, text=stripped))
+            items.append(
+                SourceLyricLine(
+                    id=f"lyric-line-{line_number}",
+                    line_number=line_number,
+                    text=stripped,
+                )
+            )
     return SongSource(items=tuple(items))
 
 

@@ -7,6 +7,7 @@ from pydantic_ai.settings import ModelSettings
 from melos.domain.composition import (
     InjectedInstruction,
     RawUserContent,
+    RequestedInstrumentConstraints,
     ResolvedCompositionConstraints,
     WholeSongCompositionInput,
 )
@@ -41,6 +42,10 @@ def composition_input_from(
                 numerator=meta.time_signature.numerator,
                 denominator=meta.time_signature.denominator,
             ),
+        ),
+        requested_instruments=RequestedInstrumentConstraints(
+            include=tuple(request.include_instruments),
+            exclude=tuple(request.exclude_instruments),
         ),
         source=parse_song_source(request.lyrics),
         injected_instructions=(

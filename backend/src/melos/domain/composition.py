@@ -14,7 +14,7 @@ class CompositionModel(BaseModel):
 
 
 class RawUserContent(CompositionModel):
-    """Untouched user-authored fields, apart from all derived data."""
+    """User-authored prompt and lyric markup, excluding request constraints."""
 
     prompt: str = Field(min_length=1, max_length=4_000)
     lyrics: str | None = Field(default=None, max_length=8_000)
@@ -26,6 +26,13 @@ class ResolvedCompositionConstraints(CompositionModel):
     tempo_bpm: float = Field(ge=20, le=400)
     key: KeyName
     meter: Meter
+
+
+class RequestedInstrumentConstraints(CompositionModel):
+    """Exact requested lists, visible to the composer without GM enforcement."""
+
+    include: tuple[str, ...] = ()
+    exclude: tuple[str, ...] = ()
 
 
 class InjectedInstruction(CompositionModel):
@@ -41,6 +48,7 @@ class WholeSongCompositionInput(CompositionModel):
 
     raw_user_content: RawUserContent
     resolved_constraints: ResolvedCompositionConstraints
+    requested_instruments: RequestedInstrumentConstraints
     source: SongSource
     injected_instructions: tuple[InjectedInstruction, ...] = ()
 
@@ -70,6 +78,12 @@ class WholeSongCompositionInput(CompositionModel):
             violations.append(
                 "user_directives must preserve exactly the supplied directive text; "
                 f"expected {requested_directives}, got {actual_directives}"
+            )
+
+        if score.display_lyrics != self.source.sung_text:
+            violations.append(
+                "lyric_tokens must reconstruct the supplied lyrics exactly; "
+                f"expected {self.source.sung_text!r}, got {score.display_lyrics!r}"
             )
         return violations
 
