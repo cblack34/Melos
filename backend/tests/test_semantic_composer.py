@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Callable
 from copy import deepcopy
@@ -577,6 +578,82 @@ async def test_provider_failure_records_sent_request_and_terminal_error() -> Non
     assert run.aggregate_usage.input_tokens == 0
     assert run.aggregate_usage.output_tokens == 0
     assert json.loads(run.aggregate_usage.details_json) == {}
+
+
+@pytest.mark.anyio
+async def test_cancelled_composition_records_request_before_reraising() -> None:
+    request, meta = composition()
+    repository = InMemoryExperimentRepository()
+    model_request_started = asyncio.Event()
+    model_request_may_finish = asyncio.Event()
+
+    async def block_request(_: list[ModelMessage], __: AgentInfo) -> ModelResponse:
+        model_request_started.set()
+        await model_request_may_finish.wait()
+        raise AssertionError("the cancelled request must not resume")
+
+    composer = PydanticAISemanticScoreComposer(
+        FunctionModel(block_request),
+        use_native_output=False,
+        repository=repository,
+        run_id_factory=lambda: "run-cancelled",
+    )
+
+    task = asyncio.create_task(composer.compose(composition_input_from(request, meta)))
+    await model_request_started.wait()
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    run = repository.get("run-cancelled")
+    assert run is not None
+    assert len(run.model_requests) == 1
+    assert run.terminal_error is not None
+    assert run.terminal_error.type == "CancelledError"
+
+
+@pytest.mark.anyio
+async def test_cancelled_composition_preserves_cancellation_when_save_fails() -> None:
+    class FailingRepository:
+        def save(self, run: ExperimentRun) -> None:
+            del run
+            raise OSError("disk unavailable")
+
+        def get(self, run_id: str) -> ExperimentRun | None:
+            del run_id
+            return None
+
+        def list_group(self, experiment_group_id: str) -> tuple[ExperimentRun, ...]:
+            del experiment_group_id
+            return ()
+
+    request, meta = composition()
+    model_request_started = asyncio.Event()
+    model_request_may_finish = asyncio.Event()
+
+    async def block_request(_: list[ModelMessage], __: AgentInfo) -> ModelResponse:
+        model_request_started.set()
+        await model_request_may_finish.wait()
+        raise AssertionError("the cancelled request must not resume")
+
+    composer = PydanticAISemanticScoreComposer(
+        FunctionModel(block_request),
+        use_native_output=False,
+        repository=FailingRepository(),
+    )
+
+    task = asyncio.create_task(composer.compose(composition_input_from(request, meta)))
+    await model_request_started.wait()
+    task.cancel()
+
+    with pytest.raises(
+        ProvenancePersistenceError, match="after composition failed"
+    ) as error:
+        await task
+
+    assert isinstance(error.value.__cause__, asyncio.CancelledError)
+    assert isinstance(error.value.persistence_error, OSError)
 
 
 @pytest.mark.anyio

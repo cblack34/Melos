@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from asyncio import CancelledError
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import asdict
 from datetime import UTC, datetime
@@ -141,7 +142,7 @@ class CompositionExperimentRecorder:
         run_id = self._run_id_factory()
         evidence = _RunEvidence(self._redactor)
         score: SemanticScore | None = None
-        terminal_error: Exception | None = None
+        terminal_error: BaseException | None = None
         result_usage: RunUsage | None = None
 
         with capture_run_messages() as captured_messages:
@@ -154,6 +155,8 @@ class CompositionExperimentRecorder:
                 )
                 score = result.output
                 result_usage = result.usage
+            except CancelledError as error:
+                terminal_error = error
             except Exception as error:
                 terminal_error = error
         final_messages = list(captured_messages) or evidence.last_request_messages
@@ -258,7 +261,7 @@ class CompositionExperimentRecorder:
         final_messages: list[ModelMessage],
         result_usage: RunUsage | None,
         score: SemanticScore | None,
-        terminal_error: Exception | None,
+        terminal_error: BaseException | None,
     ) -> ExperimentRun:
         persisted_score = _redacted_score(score, self._redactor)
         responses = tuple(
