@@ -7,7 +7,7 @@ from collections.abc import Callable
 from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from pydantic_ai.exceptions import UnexpectedModelBehavior
@@ -430,6 +430,64 @@ async def test_redaction_removes_secret_values_from_persisted_evidence() -> None
     assert "super-secret" not in run.raw_user_content.prompt
     assert "super-secret" not in run.final_messages_json
     assert "[REDACTED]" in run.final_messages_json
+
+
+@pytest.mark.anyio
+async def test_redaction_removes_configured_secret_from_complete_experiment_run() -> (
+    None
+):
+    request, meta = composition()
+    configured_secret = "configured-source-secret"
+    request = request.model_copy(
+        update={
+            "lyrics": (
+                "[Verse]\n"
+                f"First {configured_secret}\n"
+                f"{{Keep {configured_secret} restrained.}}\n"
+                "[Chorus]\n"
+                "Second line"
+            )
+        }
+    )
+    persisted_score = score_data(
+        user_directives=[
+            {
+                "id": "user-restraint",
+                "text": f"Keep {configured_secret} restrained.",
+            }
+        ]
+    )
+    parts = persisted_score["parts"]
+    assert isinstance(parts, list)
+    vocal_part = cast(dict[str, Any], parts[2])
+    vocal_phrases = cast(list[dict[str, Any]], vocal_part["phrases"])
+    verse_vocal_phrase = vocal_phrases[0]
+    lyric_assignments = cast(
+        list[dict[str, Any]], verse_vocal_phrase["lyric_assignments"]
+    )
+    source_secret_assignment = lyric_assignments[1]
+    syllables = cast(list[dict[str, Any]], source_secret_assignment["syllables"])
+    source_secret_syllable = syllables[0]
+    source_secret_syllable["text"] = configured_secret
+    lyric_tokens = persisted_score["lyric_tokens"]
+    assert isinstance(lyric_tokens, list)
+    source_secret_token = cast(dict[str, Any], lyric_tokens[1])
+    source_secret_token["display_text"] = f" {configured_secret}"
+    repository = InMemoryExperimentRepository()
+    composer = composer_returning(
+        [persisted_score],
+        [],
+        repository=repository,
+        redactor=EvidenceRedactor([configured_secret]),
+    )
+
+    await composer.compose(composition_input_from(request, meta))
+
+    run = repository.get("run-test")
+    assert run is not None
+    serialized = run.model_dump_json()
+    assert configured_secret not in serialized
+    assert "[REDACTED]" in serialized
 
 
 @pytest.mark.anyio

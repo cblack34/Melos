@@ -18,6 +18,7 @@ from pydantic_ai.models import Model, ModelRequestContext
 from pydantic_ai.settings import ModelSettings
 
 from melos.domain.composition import RawUserContent, WholeSongCompositionInput
+from melos.domain.lyrics import SongSource
 from melos.domain.provenance import (
     ErrorEvidence,
     ExperimentRepository,
@@ -235,6 +236,7 @@ class CompositionExperimentRecorder:
         score: SemanticScore | None,
         terminal_error: Exception | None,
     ) -> ExperimentRun:
+        persisted_score = _redacted_score(score, self._redactor)
         responses = tuple(
             _response_evidence(response, request, self._redactor)
             for response, request in evidence.responses
@@ -261,7 +263,9 @@ class CompositionExperimentRecorder:
             ),
             resolved_constraints=composition.resolved_constraints,
             requested_instruments=composition.requested_instruments,
-            source=composition.source,
+            source=SongSource.model_validate(
+                self._redactor.redact(composition.source.model_dump(mode="json"))
+            ),
             injected_instructions=tuple(
                 InjectedInstructionEvidence(
                     id=instruction.id,
@@ -292,11 +296,17 @@ class CompositionExperimentRecorder:
                 ),
             ),
             aggregate_usage=aggregate_usage,
-            schema_version=score.schema_version if score is not None else None,
-            realization=score.realization if score is not None else None,
-            semantic_score=score,
+            schema_version=(
+                persisted_score.schema_version if persisted_score is not None else None
+            ),
+            realization=(
+                persisted_score.realization if persisted_score is not None else None
+            ),
+            semantic_score=persisted_score,
             semantic_score_hash=(
-                semantic_score_hash(score) if score is not None else None
+                semantic_score_hash(persisted_score)
+                if persisted_score is not None
+                else None
             ),
             terminal_error=(
                 ErrorEvidence(
@@ -358,6 +368,14 @@ def _response_evidence(
         effective_model=request.effective_model,
         usage=_usage_evidence(response.usage, requests=1, redactor=redactor),
     )
+
+
+def _redacted_score(
+    score: SemanticScore | None, redactor: EvidenceRedactor
+) -> SemanticScore | None:
+    if score is None:
+        return None
+    return SemanticScore.model_validate(redactor.redact(score.model_dump(mode="json")))
 
 
 def _model_identity(
