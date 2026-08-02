@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import asdict
 from datetime import UTC, datetime
 from hashlib import sha256
 from importlib.metadata import version
 from time import perf_counter
+from typing import Protocol
 from uuid import uuid4
 
 from pydantic_ai import Agent, ModelRetry, RunContext, capture_run_messages
@@ -16,6 +17,7 @@ from pydantic_ai.capabilities import Hooks
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter, ModelResponse
 from pydantic_ai.models import Model, ModelRequestContext
 from pydantic_ai.settings import ModelSettings
+from pydantic_ai.usage import RunUsage
 
 from melos.domain.composition import RawUserContent, WholeSongCompositionInput
 from melos.domain.lyrics import SongSource
@@ -71,6 +73,28 @@ class _RunEvidence:
         self.responses.append((response, self.latest_request))
 
 
+class _UsageValues(Protocol):
+    """The token fields shared by Pydantic AI request and run usage objects."""
+
+    @property
+    def requests(self) -> int: ...
+
+    @property
+    def input_tokens(self) -> int: ...
+
+    @property
+    def output_tokens(self) -> int: ...
+
+    @property
+    def cache_write_tokens(self) -> int: ...
+
+    @property
+    def cache_read_tokens(self) -> int: ...
+
+    @property
+    def details(self) -> Mapping[str, object]: ...
+
+
 def _utc_now() -> datetime:
     return datetime.now(UTC)
 
@@ -118,7 +142,7 @@ class CompositionExperimentRecorder:
         evidence = _RunEvidence(self._redactor)
         score: SemanticScore | None = None
         terminal_error: Exception | None = None
-        result_usage: object | None = None
+        result_usage: RunUsage | None = None
 
         with capture_run_messages() as captured_messages:
             try:
@@ -241,10 +265,13 @@ class CompositionExperimentRecorder:
             _response_evidence(response, request, self._redactor)
             for response, request in evidence.responses
         )
+        usage: _UsageValues | Mapping[str, object] = _aggregate_response_usage(
+            responses
+        )
+        if isinstance(result_usage, RunUsage):
+            usage = result_usage
         aggregate_usage = _usage_evidence(
-            result_usage
-            if result_usage is not None
-            else _aggregate_response_usage(responses),
+            usage,
             requests=len(responses),
             redactor=self._redactor,
         )
@@ -400,20 +427,47 @@ def _redacted_optional(value: str | None, redactor: EvidenceRedactor) -> str | N
 
 
 def _usage_evidence(
-    usage: object,
+    usage: _UsageValues | Mapping[str, object],
     *,
     requests: int,
     redactor: EvidenceRedactor,
 ) -> UsageEvidence:
-    details = getattr(usage, "details", {})
+    values = _usage_mapping(usage)
     return UsageEvidence(
-        requests=getattr(usage, "requests", requests),
-        input_tokens=getattr(usage, "input_tokens", 0),
-        output_tokens=getattr(usage, "output_tokens", 0),
-        cache_write_tokens=getattr(usage, "cache_write_tokens", 0),
-        cache_read_tokens=getattr(usage, "cache_read_tokens", 0),
-        details_json=_json_evidence(details, redactor),
+        requests=_usage_int(values, "requests", requests),
+        input_tokens=_usage_int(values, "input_tokens"),
+        output_tokens=_usage_int(values, "output_tokens"),
+        cache_write_tokens=_usage_int(values, "cache_write_tokens"),
+        cache_read_tokens=_usage_int(values, "cache_read_tokens"),
+        details_json=_json_evidence(_usage_details(values), redactor),
     )
+
+
+def _usage_mapping(
+    usage: _UsageValues | Mapping[str, object],
+) -> Mapping[str, object]:
+    if isinstance(usage, Mapping):
+        return {str(key): value for key, value in usage.items()}
+    return {
+        "requests": usage.requests,
+        "input_tokens": usage.input_tokens,
+        "output_tokens": usage.output_tokens,
+        "cache_write_tokens": usage.cache_write_tokens,
+        "cache_read_tokens": usage.cache_read_tokens,
+        "details": usage.details,
+    }
+
+
+def _usage_int(values: Mapping[str, object], name: str, default: int = 0) -> int:
+    value = values.get(name, default)
+    return value if isinstance(value, int) else default
+
+
+def _usage_details(values: Mapping[str, object]) -> dict[str, object]:
+    details = values.get("details", {})
+    if not isinstance(details, Mapping):
+        return {}
+    return {str(key): value for key, value in details.items()}
 
 
 def _aggregate_response_usage(

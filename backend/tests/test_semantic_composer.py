@@ -261,6 +261,7 @@ def composer_returning(
     redactor: EvidenceRedactor | None = None,
     provider_details: dict[str, object] | None = None,
     response_metadata: dict[str, object] | None = None,
+    usage_details: dict[str, int] | None = None,
     pydantic_ai_version: str | None = None,
     run_id_factory: Callable[[], str] = lambda: "run-test",
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
@@ -275,7 +276,9 @@ def composer_returning(
             model_name="test-semantic-model",
             provider_name="test-provider",
             provider_response_id=f"response-{len(histories)}",
-            usage=RequestUsage(input_tokens=10, output_tokens=20),
+            usage=RequestUsage(
+                input_tokens=10, output_tokens=20, details=usage_details
+            ),
             provider_details=provider_details,
             metadata=response_metadata,
         )
@@ -520,7 +523,12 @@ async def test_retry_exhaustion_retains_the_final_untransmitted_failure() -> Non
     rejected = deepcopy(score_data())
     rejected["tempo_bpm"] = 120
     repository = InMemoryExperimentRepository()
-    composer = composer_returning([rejected], [], repository=repository)
+    composer = composer_returning(
+        [rejected],
+        [],
+        repository=repository,
+        usage_details={"provider_cached_tokens": 3},
+    )
 
     with pytest.raises(UnexpectedModelBehavior):
         await composer.compose(composition_input_from(request, meta))
@@ -530,6 +538,11 @@ async def test_retry_exhaustion_retains_the_final_untransmitted_failure() -> Non
     assert len(run.responses) == 4
     assert len(run.validation_failures) == 4
     assert run.aggregate_usage.requests == 4
+    assert run.aggregate_usage.input_tokens == 40
+    assert run.aggregate_usage.output_tokens == 80
+    assert json.loads(run.aggregate_usage.details_json) == {
+        "provider_cached_tokens": 12
+    }
     assert run.terminal_error is not None
     assert "tempo_bpm must exactly match" in run.validation_failures[-1].message
 
