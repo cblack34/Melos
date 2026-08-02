@@ -1,5 +1,8 @@
 """Pydantic-AI adapter for one complete semantic-score composition attempt."""
 
+from collections.abc import Callable
+from datetime import datetime
+
 from pydantic_ai import Agent, ModelRetry, NativeOutput, RunContext
 from pydantic_ai.models import Model
 from pydantic_ai.settings import ModelSettings
@@ -8,12 +11,16 @@ from melos.domain.composition import (
     InjectedInstruction,
     RawUserContent,
     RequestedInstrumentConstraints,
+    RequestedMetaConstraints,
     ResolvedCompositionConstraints,
     WholeSongCompositionInput,
 )
 from melos.domain.generator import GenerationRequest
 from melos.domain.lyrics import parse_song_source
+from melos.domain.provenance import ExperimentRepository
 from melos.domain.semantic import Meter, SemanticScore
+from melos.generation.composition_experiments import CompositionExperimentRecorder
+from melos.generation.experiments import EvidenceRedactor
 from melos.generation.meta import ResolvedMeta
 from melos.generation.observability import progress_hooks
 
@@ -39,6 +46,18 @@ def composition_input_from(
     """Normalize existing request/meta seams without changing their contracts."""
     return WholeSongCompositionInput(
         raw_user_content=RawUserContent(prompt=request.prompt, lyrics=request.lyrics),
+        requested_meta=RequestedMetaConstraints(
+            tempo_bpm=request.tempo_bpm,
+            key=request.key,
+            meter=(
+                Meter(
+                    numerator=request.time_signature.numerator,
+                    denominator=request.time_signature.denominator,
+                )
+                if request.time_signature is not None
+                else None
+            ),
+        ),
         resolved_constraints=ResolvedCompositionConstraints(
             tempo_bpm=meta.tempo_bpm,
             key=meta.key,
@@ -71,7 +90,21 @@ class PydanticAISemanticScoreComposer:
         *,
         use_native_output: bool,
         model_settings: ModelSettings | None = None,
+        repository: ExperimentRepository,
+        clock: Callable[[], datetime] | None = None,
+        run_id_factory: Callable[[], str] | None = None,
+        redactor: EvidenceRedactor | None = None,
+        pydantic_ai_version: str | None = None,
     ) -> None:
+        self._experiments = CompositionExperimentRecorder(
+            repository=repository,
+            model=model,
+            model_settings=model_settings,
+            clock=clock,
+            run_id_factory=run_id_factory,
+            redactor=redactor,
+            pydantic_ai_version=pydantic_ai_version,
+        )
         output_type = (
             NativeOutput(SemanticScore) if use_native_output else SemanticScore
         )
@@ -97,11 +130,10 @@ class PydanticAISemanticScoreComposer:
             return score
 
     async def compose(self, composition: WholeSongCompositionInput) -> SemanticScore:
-        """Run one whole-song operation; output retries retain the conversation."""
-        result = await self._agent.run(
-            _composition_message(composition), deps=composition
+        """Run one complete composition while provenance persists at the outer edge."""
+        return await self._experiments.run(
+            self._agent, composition, _composition_message(composition)
         )
-        return result.output
 
 
 def _composition_message(composition: WholeSongCompositionInput) -> str:

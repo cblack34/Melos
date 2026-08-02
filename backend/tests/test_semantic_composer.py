@@ -2,17 +2,34 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Callable
 from copy import deepcopy
-from typing import Any
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any, cast
 
 import pytest
+from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.usage import RequestUsage
 
+import melos.generation.experiments as experiments_module
 from melos.domain.generator import GenerationRequest
+from melos.domain.provenance import (
+    DuplicateExperimentRunError,
+    ExperimentRepository,
+    ExperimentRun,
+)
 from melos.domain.semantic import Meter, SemanticScore
+from melos.generation.composition_experiments import ProvenancePersistenceError
+from melos.generation.experiments import (
+    EvidenceRedactor,
+    InMemoryExperimentRepository,
+    JsonExperimentRepository,
+)
 from melos.generation.meta import ResolvedMeta
 from melos.generation.semantic_composer import (
     PydanticAISemanticScoreComposer,
@@ -221,18 +238,62 @@ def whole_song_input(messages: list[str]) -> dict[str, Any]:
     return payload
 
 
+def test_redactor_removes_secret_keyed_fields_without_erasing_lyric_tokens() -> None:
+    redacted = EvidenceRedactor(["configured-secret"]).redact(
+        {
+            "Authorization": "Bearer configured-secret",
+            "nested": {"api_key": "configured-secret"},
+            "lyric_tokens": ["configured-secret"],
+        }
+    )
+
+    assert redacted == {
+        "Authorization": "[REDACTED]",
+        "nested": {"api_key": "[REDACTED]"},
+        "lyric_tokens": ["[REDACTED]"],
+    }
+
+
 def composer_returning(
-    payloads: list[dict[str, object]], histories: list[list[str]]
+    payloads: list[dict[str, object]],
+    histories: list[list[str]],
+    *,
+    repository: ExperimentRepository | None = None,
+    redactor: EvidenceRedactor | None = None,
+    provider_details: dict[str, object] | None = None,
+    response_metadata: dict[str, object] | None = None,
+    usage_details: dict[str, int] | None = None,
+    pydantic_ai_version: str | None = None,
+    run_id_factory: Callable[[], str] = lambda: "run-test",
+    clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> PydanticAISemanticScoreComposer:
     remaining = list(payloads)
 
     def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         histories.append(text_parts(messages))
         payload = remaining.pop(0) if len(remaining) > 1 else remaining[0]
-        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, payload)])
+        return ModelResponse(
+            parts=[ToolCallPart(info.output_tools[0].name, payload)],
+            model_name="test-semantic-model",
+            provider_name="test-provider",
+            provider_response_id=f"response-{len(histories)}",
+            usage=RequestUsage(
+                input_tokens=10, output_tokens=20, details=usage_details
+            ),
+            provider_details=provider_details,
+            metadata=response_metadata,
+        )
 
     return PydanticAISemanticScoreComposer(
-        FunctionModel(respond), use_native_output=False
+        FunctionModel(respond),
+        use_native_output=False,
+        repository=(
+            repository if repository is not None else InMemoryExperimentRepository()
+        ),
+        redactor=redactor,
+        run_id_factory=run_id_factory,
+        clock=clock,
+        pydantic_ai_version=pydantic_ai_version,
     )
 
 
@@ -297,6 +358,576 @@ async def test_retry_keeps_complete_context_and_never_calls_a_section_composer()
         in prompt
         for prompt in histories[1]
     )
+
+
+@pytest.mark.anyio
+async def test_successful_run_persists_separated_inputs_and_score_evidence() -> None:
+    request, meta = composition()
+    repository = InMemoryExperimentRepository()
+    composer = composer_returning([score_data()], [], repository=repository)
+
+    score = await composer.compose(composition_input_from(request, meta))
+
+    run = repository.get("run-test")
+    assert run is not None
+    assert run.raw_user_content.prompt == request.prompt
+    assert run.requested_meta.tempo_bpm == request.tempo_bpm
+    assert run.requested_meta.key == request.key
+    assert run.requested_meta.meter == Meter(numerator=4, denominator=4)
+    assert run.resolved_constraints.tempo_bpm == meta.tempo_bpm
+    assert run.source == composition_input_from(request, meta).source
+    assert run.injected_instructions[0].content_hash
+    assert run.pydantic_ai_version == "2.20.0"
+    assert len(run.model_requests) == 1
+    assert '"output_tools"' in run.model_requests[0].parameters_json
+    assert run.semantic_score == score
+    assert run.semantic_score_hash is not None
+    assert run.responses[0].provider_response_id == "response-1"
+    assert run.aggregate_usage.input_tokens == 10
+    assert run.aggregate_usage.output_tokens == 20
+    assert run.terminal_error is None
+
+
+@pytest.mark.anyio
+async def test_retry_run_records_all_responses_and_validator_feedback() -> None:
+    request, meta = composition()
+    rejected = deepcopy(score_data())
+    rejected["tempo_bpm"] = 120
+    repository = InMemoryExperimentRepository()
+    composer = composer_returning([rejected, score_data()], [], repository=repository)
+
+    await composer.compose(composition_input_from(request, meta))
+
+    run = repository.get("run-test")
+    assert run is not None
+    assert [response.provider_response_id for response in run.responses] == [
+        "response-1",
+        "response-2",
+    ]
+    assert run.aggregate_usage.requests == 2
+    assert len(run.validation_failures) == 1
+    assert "tempo_bpm must exactly match" in run.validation_failures[0].message
+    messages = json.loads(run.final_messages_json)
+    assert any(
+        part["part_kind"] == "retry-prompt"
+        for message in messages
+        for part in message["parts"]
+    )
+
+
+@pytest.mark.anyio
+async def test_redaction_removes_secret_values_from_persisted_evidence() -> None:
+    request, meta = composition()
+    request = request.model_copy(update={"prompt": "write with token super-secret"})
+    repository = InMemoryExperimentRepository()
+    composer = composer_returning(
+        [score_data()],
+        [],
+        repository=repository,
+        redactor=EvidenceRedactor(["super-secret"]),
+    )
+
+    await composer.compose(composition_input_from(request, meta))
+
+    run = repository.get("run-test")
+    assert run is not None
+    assert "super-secret" not in run.raw_user_content.prompt
+    assert "super-secret" not in run.final_messages_json
+    assert "[REDACTED]" in run.final_messages_json
+
+
+@pytest.mark.anyio
+async def test_redaction_removes_configured_secret_from_complete_experiment_run() -> (
+    None
+):
+    request, meta = composition()
+    configured_secret = "configured-source-secret"
+    request = request.model_copy(
+        update={
+            "lyrics": (
+                "[Verse]\n"
+                f"First {configured_secret}\n"
+                f"{{Keep {configured_secret} restrained.}}\n"
+                "[Chorus]\n"
+                "Second line"
+            )
+        }
+    )
+    persisted_score = score_data(
+        user_directives=[
+            {
+                "id": "user-restraint",
+                "text": f"Keep {configured_secret} restrained.",
+            }
+        ]
+    )
+    parts = persisted_score["parts"]
+    assert isinstance(parts, list)
+    vocal_part = cast(dict[str, Any], parts[2])
+    vocal_phrases = cast(list[dict[str, Any]], vocal_part["phrases"])
+    verse_vocal_phrase = vocal_phrases[0]
+    lyric_assignments = cast(
+        list[dict[str, Any]], verse_vocal_phrase["lyric_assignments"]
+    )
+    source_secret_assignment = lyric_assignments[1]
+    syllables = cast(list[dict[str, Any]], source_secret_assignment["syllables"])
+    source_secret_syllable = syllables[0]
+    source_secret_syllable["text"] = configured_secret
+    lyric_tokens = persisted_score["lyric_tokens"]
+    assert isinstance(lyric_tokens, list)
+    source_secret_token = cast(dict[str, Any], lyric_tokens[1])
+    source_secret_token["display_text"] = f" {configured_secret}"
+    repository = InMemoryExperimentRepository()
+    composer = composer_returning(
+        [persisted_score],
+        [],
+        repository=repository,
+        redactor=EvidenceRedactor([configured_secret]),
+    )
+
+    await composer.compose(composition_input_from(request, meta))
+
+    run = repository.get("run-test")
+    assert run is not None
+    serialized = run.model_dump_json()
+    assert configured_secret not in serialized
+    assert "[REDACTED]" in serialized
+
+
+@pytest.mark.anyio
+async def test_provider_details_and_metadata_are_not_persisted() -> None:
+    request, meta = composition()
+    repository = InMemoryExperimentRepository()
+    composer = composer_returning(
+        [score_data()],
+        [],
+        repository=repository,
+        provider_details={"unconfigured_secret": "do-not-store-this"},
+        response_metadata={"unconfigured_secret": "also-do-not-store-this"},
+    )
+
+    await composer.compose(composition_input_from(request, meta))
+
+    run = repository.get("run-test")
+    assert run is not None
+    persisted = run.final_messages_json + run.responses[0].response_json
+    assert "provider_details" not in persisted
+    assert "metadata" not in persisted
+    assert "do-not-store-this" not in persisted
+    assert "also-do-not-store-this" not in persisted
+    assert run.responses[0].provider_response_id == "response-1"
+
+
+@pytest.mark.anyio
+async def test_retry_exhaustion_retains_the_final_untransmitted_failure() -> None:
+    request, meta = composition()
+    rejected = deepcopy(score_data())
+    rejected["tempo_bpm"] = 120
+    repository = InMemoryExperimentRepository()
+    composer = composer_returning(
+        [rejected],
+        [],
+        repository=repository,
+        usage_details={"provider_cached_tokens": 3},
+    )
+
+    with pytest.raises(UnexpectedModelBehavior):
+        await composer.compose(composition_input_from(request, meta))
+
+    run = repository.get("run-test")
+    assert run is not None
+    assert len(run.responses) == 4
+    assert len(run.validation_failures) == 4
+    assert run.aggregate_usage.requests == 4
+    assert run.aggregate_usage.input_tokens == 40
+    assert run.aggregate_usage.output_tokens == 80
+    assert json.loads(run.aggregate_usage.details_json) == {
+        "provider_cached_tokens": 12
+    }
+    assert run.terminal_error is not None
+    assert "tempo_bpm must exactly match" in run.validation_failures[-1].message
+
+
+@pytest.mark.anyio
+async def test_provider_failure_records_sent_request_and_terminal_error() -> None:
+    request, meta = composition()
+    repository = InMemoryExperimentRepository()
+
+    def fail(_: list[ModelMessage], __: AgentInfo) -> ModelResponse:
+        raise RuntimeError("provider unavailable")
+
+    composer = PydanticAISemanticScoreComposer(
+        FunctionModel(fail),
+        use_native_output=False,
+        repository=repository,
+        run_id_factory=lambda: "run-provider-failure",
+    )
+
+    with pytest.raises(RuntimeError, match="provider unavailable"):
+        await composer.compose(composition_input_from(request, meta))
+
+    run = repository.get("run-provider-failure")
+    assert run is not None
+    assert run.responses == ()
+    assert run.terminal_error is not None
+    assert run.terminal_error.message == "provider unavailable"
+    assert "Whole-song composition input" in run.final_messages_json
+    assert len(run.model_requests) == 1
+    assert '"output_tools"' in run.model_requests[0].parameters_json
+    assert run.aggregate_usage.requests == 1
+    assert run.aggregate_usage.input_tokens == 0
+    assert run.aggregate_usage.output_tokens == 0
+    assert json.loads(run.aggregate_usage.details_json) == {}
+
+
+@pytest.mark.anyio
+async def test_cancelled_composition_records_request_before_reraising() -> None:
+    request, meta = composition()
+    repository = InMemoryExperimentRepository()
+    model_request_started = asyncio.Event()
+    model_request_may_finish = asyncio.Event()
+
+    async def block_request(_: list[ModelMessage], __: AgentInfo) -> ModelResponse:
+        model_request_started.set()
+        await model_request_may_finish.wait()
+        raise AssertionError("the cancelled request must not resume")
+
+    composer = PydanticAISemanticScoreComposer(
+        FunctionModel(block_request),
+        use_native_output=False,
+        repository=repository,
+        run_id_factory=lambda: "run-cancelled",
+    )
+
+    task = asyncio.create_task(composer.compose(composition_input_from(request, meta)))
+    await model_request_started.wait()
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    run = repository.get("run-cancelled")
+    assert run is not None
+    assert len(run.model_requests) == 1
+    assert run.terminal_error is not None
+    assert run.terminal_error.type == "CancelledError"
+
+
+@pytest.mark.anyio
+async def test_cancelled_composition_preserves_cancellation_when_save_fails() -> None:
+    class FailingRepository:
+        def save(self, run: ExperimentRun) -> None:
+            del run
+            raise OSError("disk unavailable")
+
+        def get(self, run_id: str) -> ExperimentRun | None:
+            del run_id
+            return None
+
+        def list_group(self, experiment_group_id: str) -> tuple[ExperimentRun, ...]:
+            del experiment_group_id
+            return ()
+
+    request, meta = composition()
+    model_request_started = asyncio.Event()
+    model_request_may_finish = asyncio.Event()
+
+    async def block_request(_: list[ModelMessage], __: AgentInfo) -> ModelResponse:
+        model_request_started.set()
+        await model_request_may_finish.wait()
+        raise AssertionError("the cancelled request must not resume")
+
+    composer = PydanticAISemanticScoreComposer(
+        FunctionModel(block_request),
+        use_native_output=False,
+        repository=FailingRepository(),
+    )
+
+    task = asyncio.create_task(composer.compose(composition_input_from(request, meta)))
+    await model_request_started.wait()
+    task.cancel()
+
+    with pytest.raises(
+        ProvenancePersistenceError, match="after composition failed"
+    ) as error:
+        await task
+
+    assert isinstance(error.value.__cause__, asyncio.CancelledError)
+    assert isinstance(error.value.persistence_error, OSError)
+
+
+@pytest.mark.anyio
+async def test_provider_failure_redacts_configured_secret_from_complete_run() -> None:
+    request, meta = composition()
+    repository = InMemoryExperimentRepository()
+    configured_secret = "configured-secret-value"
+
+    def fail(_: list[ModelMessage], __: AgentInfo) -> ModelResponse:
+        raise RuntimeError(f"provider failure: {configured_secret}")
+
+    composer = PydanticAISemanticScoreComposer(
+        FunctionModel(fail),
+        use_native_output=False,
+        repository=repository,
+        model_settings={
+            "extra_headers": {
+                "Authorization": f"Bearer {configured_secret}",
+                "X-Secret": configured_secret,
+            }
+        },
+        redactor=EvidenceRedactor([configured_secret]),
+        run_id_factory=lambda: "run-redacted-provider-failure",
+    )
+
+    with pytest.raises(RuntimeError, match="provider failure"):
+        await composer.compose(composition_input_from(request, meta))
+
+    run = repository.get("run-redacted-provider-failure")
+    assert run is not None
+    serialized = run.model_dump_json()
+    assert configured_secret not in serialized
+    assert f"Bearer {configured_secret}" not in serialized
+    assert "[REDACTED]" in serialized
+    assert "Authorization" in serialized
+    assert "X-Secret" in serialized
+
+
+@pytest.mark.anyio
+async def test_provenance_repository_failure_prevents_unrecorded_success() -> None:
+    class FailingRepository:
+        def save(self, run: ExperimentRun) -> None:
+            del run
+            raise OSError("disk unavailable")
+
+        def get(self, run_id: str) -> ExperimentRun | None:
+            del run_id
+            return None
+
+        def list_group(self, experiment_group_id: str) -> tuple[ExperimentRun, ...]:
+            del experiment_group_id
+            return ()
+
+    request, meta = composition()
+    composer = composer_returning([score_data()], [], repository=FailingRepository())
+
+    with pytest.raises(ProvenancePersistenceError, match="successful") as error:
+        await composer.compose(composition_input_from(request, meta))
+
+    assert isinstance(error.value.persistence_error, OSError)
+
+
+@pytest.mark.anyio
+async def test_failed_composition_preserves_original_cause_when_save_fails() -> None:
+    class FailingRepository:
+        def save(self, run: ExperimentRun) -> None:
+            del run
+            raise OSError("disk unavailable")
+
+        def get(self, run_id: str) -> ExperimentRun | None:
+            del run_id
+            return None
+
+        def list_group(self, experiment_group_id: str) -> tuple[ExperimentRun, ...]:
+            del experiment_group_id
+            return ()
+
+    request, meta = composition()
+
+    def fail(_: list[ModelMessage], __: AgentInfo) -> ModelResponse:
+        raise RuntimeError("provider unavailable")
+
+    composer = PydanticAISemanticScoreComposer(
+        FunctionModel(fail),
+        use_native_output=False,
+        repository=FailingRepository(),
+    )
+
+    with pytest.raises(
+        ProvenancePersistenceError, match="after composition failed"
+    ) as error:
+        await composer.compose(composition_input_from(request, meta))
+
+    assert isinstance(error.value.__cause__, RuntimeError)
+    assert str(error.value.__cause__) == "provider unavailable"
+    assert isinstance(error.value.persistence_error, OSError)
+
+
+@pytest.mark.anyio
+async def test_json_repository_round_trips_immutable_sibling_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    request, meta = composition()
+    composition_input = composition_input_from(request, meta)
+    repository = JsonExperimentRepository(tmp_path)
+
+    def clock() -> datetime:
+        return datetime(2026, 8, 1, tzinfo=UTC)
+
+    await composer_returning(
+        [score_data()],
+        [],
+        repository=repository,
+        run_id_factory=lambda: "run-b",
+        clock=clock,
+    ).compose(composition_input)
+    await composer_returning(
+        [score_data()],
+        [],
+        repository=repository,
+        run_id_factory=lambda: "run-a",
+        clock=clock,
+    ).compose(composition_input)
+    changed_instruction = composition_input.injected_instructions[0].model_copy(
+        update={"version": "2", "text": "A distinct, versioned instruction."}
+    )
+    changed_input = composition_input.model_copy(
+        update={"injected_instructions": (changed_instruction,)}
+    )
+    await composer_returning(
+        [score_data()],
+        [],
+        repository=repository,
+        run_id_factory=lambda: "run-c",
+        clock=clock,
+    ).compose(changed_input)
+    parent_a = composition_input.model_copy(update={"parent_revision_id": "parent-a"})
+    parent_b = composition_input.model_copy(update={"parent_revision_id": "parent-b"})
+    await composer_returning(
+        [score_data()],
+        [],
+        repository=repository,
+        run_id_factory=lambda: "run-d",
+        clock=clock,
+    ).compose(parent_a)
+    await composer_returning(
+        [score_data()],
+        [],
+        repository=repository,
+        run_id_factory=lambda: "run-e",
+        clock=clock,
+    ).compose(parent_b)
+
+    first = repository.get("run-b")
+    changed = repository.get("run-c")
+    parent_run_a = repository.get("run-d")
+    parent_run_b = repository.get("run-e")
+    assert first is not None
+    assert changed is not None
+    assert parent_run_a is not None
+    assert parent_run_b is not None
+    assert [run.run_id for run in repository.list_group(first.experiment_group_id)] == [
+        "run-a",
+        "run-b",
+        "run-d",
+        "run-e",
+    ]
+    with pytest.raises(DuplicateExperimentRunError):
+        repository.save(first)
+    assert changed.experiment_group_id != first.experiment_group_id
+    assert changed.raw_user_content == first.raw_user_content
+    assert parent_run_a.experiment_group_id == parent_run_b.experiment_group_id
+    assert parent_run_a.experiment_group_id == first.experiment_group_id
+
+    incomplete = first.model_copy(update={"run_id": "run-incomplete"})
+
+    def fail_dump(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise OSError("write interrupted")
+
+    monkeypatch.setattr(experiments_module.json, "dump", fail_dump)
+    with pytest.raises(OSError, match="write interrupted"):
+        repository.save(incomplete)
+    assert not (tmp_path / "run-incomplete.json").exists()
+    assert not list(tmp_path.glob(".run-incomplete.*.tmp"))
+
+
+@pytest.mark.anyio
+async def test_json_repository_syncs_file_then_published_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    request, meta = composition()
+    repository = JsonExperimentRepository(tmp_path)
+    events: list[str] = []
+    directory_fds: set[int] = set()
+    original_open = experiments_module.os.open
+    original_fsync = experiments_module.os.fsync
+    original_link = experiments_module.os.link
+
+    def tracked_open(path: object, flags: int, mode: int = 0o777) -> int:
+        fd = original_open(cast(Any, path), flags, mode)
+        if path == tmp_path:
+            directory_fds.add(fd)
+        return fd
+
+    def tracked_fsync(fd: int) -> None:
+        events.append("directory-fsync" if fd in directory_fds else "file-fsync")
+        original_fsync(fd)
+
+    def tracked_link(source: object, destination: object) -> None:
+        events.append("link")
+        original_link(cast(Any, source), cast(Any, destination))
+
+    monkeypatch.setattr(experiments_module.os, "open", tracked_open)
+    monkeypatch.setattr(experiments_module.os, "fsync", tracked_fsync)
+    monkeypatch.setattr(experiments_module.os, "link", tracked_link)
+
+    await composer_returning(
+        [score_data()],
+        [],
+        repository=repository,
+        run_id_factory=lambda: "run-durable",
+    ).compose(composition_input_from(request, meta))
+
+    assert (
+        events.index("file-fsync")
+        < events.index("link")
+        < events.index("directory-fsync")
+    )
+
+
+@pytest.mark.anyio
+async def test_json_repository_fails_closed_and_closes_directory_fd_on_sync_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    request, meta = composition()
+    repository = JsonExperimentRepository(tmp_path)
+    directory_fds: set[int] = set()
+    closed_fds: list[int] = []
+    original_open = experiments_module.os.open
+    original_close = experiments_module.os.close
+    original_fsync = experiments_module.os.fsync
+
+    def tracked_open(path: object, flags: int, mode: int = 0o777) -> int:
+        fd = original_open(cast(Any, path), flags, mode)
+        if path == tmp_path:
+            directory_fds.add(fd)
+        return fd
+
+    def fail_directory_fsync(fd: int) -> None:
+        if fd in directory_fds:
+            raise OSError("directory sync interrupted")
+        original_fsync(fd)
+
+    def tracked_close(fd: int) -> None:
+        if fd in directory_fds:
+            closed_fds.append(fd)
+        original_close(fd)
+
+    monkeypatch.setattr(experiments_module.os, "open", tracked_open)
+    monkeypatch.setattr(experiments_module.os, "fsync", fail_directory_fsync)
+    monkeypatch.setattr(experiments_module.os, "close", tracked_close)
+
+    with pytest.raises(ProvenancePersistenceError, match="failed to persist"):
+        await composer_returning(
+            [score_data()],
+            [],
+            repository=repository,
+            run_id_factory=lambda: "run-unsynced",
+        ).compose(composition_input_from(request, meta))
+
+    assert (tmp_path / "run-unsynced.json").is_file()
+    assert closed_fds == list(directory_fds)
+    assert not list(tmp_path.glob(".run-unsynced.*.tmp"))
 
 
 @pytest.mark.anyio
