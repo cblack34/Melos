@@ -505,6 +505,42 @@ async def test_provider_failure_records_sent_request_and_terminal_error() -> Non
 
 
 @pytest.mark.anyio
+async def test_provider_failure_redacts_configured_secret_from_complete_run() -> None:
+    request, meta = composition()
+    repository = InMemoryExperimentRepository()
+    configured_secret = "configured-secret-value"
+
+    def fail(_: list[ModelMessage], __: AgentInfo) -> ModelResponse:
+        raise RuntimeError(f"provider failure: {configured_secret}")
+
+    composer = PydanticAISemanticScoreComposer(
+        FunctionModel(fail),
+        use_native_output=False,
+        repository=repository,
+        model_settings={
+            "extra_headers": {
+                "Authorization": f"Bearer {configured_secret}",
+                "X-Secret": configured_secret,
+            }
+        },
+        redactor=EvidenceRedactor([configured_secret]),
+        run_id_factory=lambda: "run-redacted-provider-failure",
+    )
+
+    with pytest.raises(RuntimeError, match="provider failure"):
+        await composer.compose(composition_input_from(request, meta))
+
+    run = repository.get("run-redacted-provider-failure")
+    assert run is not None
+    serialized = run.model_dump_json()
+    assert configured_secret not in serialized
+    assert f"Bearer {configured_secret}" not in serialized
+    assert "[REDACTED]" in serialized
+    assert "Authorization" in serialized
+    assert "X-Secret" in serialized
+
+
+@pytest.mark.anyio
 async def test_provenance_repository_failure_prevents_unrecorded_success() -> None:
     class FailingRepository:
         def save(self, run: ExperimentRun) -> None:
@@ -525,6 +561,42 @@ async def test_provenance_repository_failure_prevents_unrecorded_success() -> No
     with pytest.raises(ProvenancePersistenceError, match="successful") as error:
         await composer.compose(composition_input_from(request, meta))
 
+    assert isinstance(error.value.persistence_error, OSError)
+
+
+@pytest.mark.anyio
+async def test_failed_composition_preserves_original_cause_when_save_fails() -> None:
+    class FailingRepository:
+        def save(self, run: ExperimentRun) -> None:
+            del run
+            raise OSError("disk unavailable")
+
+        def get(self, run_id: str) -> ExperimentRun | None:
+            del run_id
+            return None
+
+        def list_group(self, experiment_group_id: str) -> tuple[ExperimentRun, ...]:
+            del experiment_group_id
+            return ()
+
+    request, meta = composition()
+
+    def fail(_: list[ModelMessage], __: AgentInfo) -> ModelResponse:
+        raise RuntimeError("provider unavailable")
+
+    composer = PydanticAISemanticScoreComposer(
+        FunctionModel(fail),
+        use_native_output=False,
+        repository=FailingRepository(),
+    )
+
+    with pytest.raises(
+        ProvenancePersistenceError, match="after composition failed"
+    ) as error:
+        await composer.compose(composition_input_from(request, meta))
+
+    assert isinstance(error.value.__cause__, RuntimeError)
+    assert str(error.value.__cause__) == "provider unavailable"
     assert isinstance(error.value.persistence_error, OSError)
 
 
