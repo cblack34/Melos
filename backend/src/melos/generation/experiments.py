@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Iterable
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any
 
 from melos.domain.provenance import (
@@ -102,8 +104,17 @@ class JsonExperimentRepository:
     def save(self, run: ExperimentRun) -> None:
         self._root.mkdir(parents=True, exist_ok=True)
         path = self._path_for(run.run_id)
+        temporary_path: Path | None = None
         try:
-            with path.open("x", encoding="utf-8") as stream:
+            with NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=self._root,
+                prefix=f".{run.run_id}.",
+                suffix=".tmp",
+                delete=False,
+            ) as stream:
+                temporary_path = Path(stream.name)
                 json.dump(
                     run.model_dump(mode="json"),
                     stream,
@@ -112,10 +123,16 @@ class JsonExperimentRepository:
                     separators=(",", ":"),
                 )
                 stream.write("\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.link(temporary_path, path)
         except FileExistsError as error:
             raise DuplicateExperimentRunError(
                 f"experiment run already exists: {run.run_id}"
             ) from error
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
 
     def get(self, run_id: str) -> ExperimentRun | None:
         path = self._path_for(run_id)

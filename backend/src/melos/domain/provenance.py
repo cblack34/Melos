@@ -12,6 +12,7 @@ from melos.domain.composition import (
     RequestedInstrumentConstraints,
     ResolvedCompositionConstraints,
 )
+from melos.domain.lyrics import SongSource
 from melos.domain.music import KeyName
 from melos.domain.semantic import Meter, RealizationIdentity, SemanticScore
 
@@ -82,6 +83,13 @@ class ModelResponseEvidence(ProvenanceModel):
     usage: UsageEvidence
 
 
+class ModelRequestEvidence(ProvenanceModel):
+    """Effective Pydantic AI request configuration for one model turn."""
+
+    effective_model: ModelIdentity
+    parameters_json: str
+
+
 class ExperimentRun(ProvenanceModel):
     """All available evidence for exactly one successful or failed composition run."""
 
@@ -95,8 +103,11 @@ class ExperimentRun(ProvenanceModel):
     requested_meta: RequestedMeta
     resolved_constraints: ResolvedCompositionConstraints
     requested_instruments: RequestedInstrumentConstraints
+    source: SongSource
     injected_instructions: tuple[InjectedInstructionEvidence, ...]
+    pydantic_ai_version: str = Field(min_length=1, max_length=80)
     final_messages_json: str
+    model_requests: tuple[ModelRequestEvidence, ...]
     responses: tuple[ModelResponseEvidence, ...]
     validation_failures: tuple[ValidationFailure, ...]
     effective_model: ModelIdentity
