@@ -72,7 +72,7 @@ The user approved these decisions on 2026-08-01:
 - [x] Distributed primary lyrics reach the correct vocal notes; MIDI uses immutable display text, never pronunciation overrides.
 - [x] Sections, tempo, key, meter, instruments, and vocal flags survive through `Song` and parsed MIDI evidence.
 - [x] Existing production generation behavior is unchanged; no generation, API, UI, or exporter implementation changed.
-- [ ] Backend/frontend verification, GitHub CI, manual playback evidence, and a clean HEAD-matched independent review pass.
+- [x] Backend/frontend verification, GitHub CI, manual playback evidence, and a clean HEAD-matched independent review pass.
 
 ## Manual evidence
 
@@ -88,6 +88,8 @@ SoundBench reference evidence now grounds the next adjustment. Strum Lab `0.1.0`
 
 The evidence supports a conservative steeper low-to-high downstroke contour, not a literal conversion of band energy into velocity. The recipe now separates direction-specific contours: downstrokes use `(108, 94, 82, 68, 60, 54)`, while the previously reviewed upstroke contour remains unchanged until an upstroke recording exists. This avoids projecting downstroke evidence onto the opposite physical gesture. A regenerated playback check is required before accepting the adjustment.
 
+Third playback finding and slice acceptance: after the SoundBench-informed downstroke adjustment, the listener reported that the MIDI sounds good enough to move forward. Better samples would improve realism, but the available work Mac does not have the listener's preferred production instruments; a later comparison on the personal Windows production environment may refine rendering without blocking this deterministic-realization slice. The current General MIDI sample limitation is accepted as an exporter/playback-environment limitation rather than a semantic-score or realization defect.
+
 ## Automated evidence
 
 - Representative canonical JSON: 4,517 UTF-8 bytes.
@@ -95,9 +97,9 @@ The evidence supports a conservative steeper low-to-high downstroke contour, not
 - Semantic-score hash: `79f640f083755e3381986ce9349d8ffa86c98b1d5f2a076b47cf508465a25342`.
 - Realization-recipe hash: `89b96f3b07a407f93c71efc96e5cfd5607063006071f149d4b96f961cd27ad35`.
 - Expanded-song hash: `44c68d203990f380a3c703c14a4b29b187b324947e25b0d94f75153ec2391449`.
-- Pending regenerated MIDI artifact: 1,235 bytes, SHA-256 `fcc51fd8ba5d6cc3a74b6673d360d4ee87868085d45b35bacf61560af3320d2c`.
+- Accepted playback MIDI artifact: 1,235 bytes, SHA-256 `fcc51fd8ba5d6cc3a74b6673d360d4ee87868085d45b35bacf61560af3320d2c`.
 - The representative result contains 120 guitar attacks and four tracks: guitar, melody, lead vocal, and answer vocal.
-- Full local verification initially passed with 275 backend tests and 20 frontend tests. Copilot identified silent truncation when an articulation multiplier produced a fractional tick; realization now rejects that case and a focused regression pins it. Its HEAD-matched re-review then found that boundary replacement still had a default even though the operation must be explicit; the field is now required and omission is rejected. A suppressed wording comment also correctly noted that the shared key-signature set should not claim format independence, so its module description now names the narrower contract without changing the type. The latest complete gate passes with 278 backend tests and 20 frontend tests, including the direction-specific contour and equal-intent regression. Updated CI, manual playback of the regenerated MIDI, and a clean HEAD-matched re-review remain pending.
+- Full local verification initially passed with 275 backend tests and 20 frontend tests. Copilot identified silent truncation when an articulation multiplier produced a fractional tick; realization now rejects that case and a focused regression pins it. Its HEAD-matched re-review then found that boundary replacement still had a default even though the operation must be explicit; the field is now required and omission is rejected. A suppressed wording comment also correctly noted that the shared key-signature set should not claim format independence, so its module description now names the narrower contract without changing the type. The complete gate passes with 278 backend tests and 20 frontend tests, including the direction-specific contour and equal-intent regression. CI and Copilot's zero-new-comment review matched implementation HEAD `fe6e410`; this manual-evidence record receives the final documentation-only CI and HEAD-matched review before integration.
 
 ## Delivery
 
