@@ -20,6 +20,19 @@ def beat(numerator: int, denominator: int = 1) -> dict[str, int]:
     return {"n": numerator, "d": denominator}
 
 
+def nested_keys(value: object) -> set[str]:
+    """Collect mapping keys without matching arbitrary serialized values."""
+    keys: set[str] = set()
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            keys.add(str(key))
+            keys.update(nested_keys(nested))
+    elif isinstance(value, list):
+        for nested in value:
+            keys.update(nested_keys(nested))
+    return keys
+
+
 def fixture_data() -> dict[str, Any]:
     voicing = {
         "chord_symbol": "G",
@@ -277,8 +290,9 @@ def test_schema_020_keeps_key_and_semantic_instrument_identity_canonical() -> No
         "voice",
     ]
     serialized = fixture.model_dump(mode="json")
-    assert "program" not in str(serialized)
-    assert "is_vocal" not in str(serialized)
+    serialized_keys = nested_keys(serialized)
+    assert "program" not in serialized_keys
+    assert "is_vocal" not in serialized_keys
 
 
 @pytest.mark.parametrize("tempo_bpm", [nan, inf, -inf])
