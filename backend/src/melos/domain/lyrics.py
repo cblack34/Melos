@@ -17,6 +17,7 @@ import difflib
 import re
 import unicodedata
 from collections.abc import Callable, Sequence
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -57,6 +58,53 @@ class LyricsSpec(BaseModel):
         return " ".join(self.sung_lines)
 
 
+class _SourceItem(BaseModel):
+    """One parsed line retained for whole-song composition input."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    line_number: int = Field(ge=1)
+
+
+class SourceSection(_SourceItem):
+    kind: Literal["section"] = "section"
+    name: str = Field(min_length=1, max_length=80)
+
+
+class SourceDirective(_SourceItem):
+    """A directive with its source location, not an inferred occurrence scope."""
+
+    kind: Literal["directive"] = "directive"
+    text: str = Field(min_length=1, max_length=1_000)
+
+
+class SourceLyricLine(_SourceItem):
+    kind: Literal["lyric"] = "lyric"
+    text: str = Field(min_length=1, max_length=8_000)
+
+
+SourceItem = Annotated[
+    SourceSection | SourceDirective | SourceLyricLine,
+    Field(discriminator="kind"),
+]
+
+
+class SongSource(BaseModel):
+    """Ordered markup parsed without assigning directives to occurrences."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    items: tuple[SourceItem, ...] = ()
+
+    @property
+    def sections(self) -> tuple[SourceSection, ...]:
+        return tuple(item for item in self.items if isinstance(item, SourceSection))
+
+    @property
+    def directives(self) -> tuple[SourceDirective, ...]:
+        return tuple(item for item in self.items if isinstance(item, SourceDirective))
+
+
 def parse_lyrics(raw: str | None) -> LyricsSpec:
     """Split the lyrics field. Blank input means an instrumental, not an error."""
     if not raw or not raw.strip():
@@ -75,6 +123,33 @@ def parse_lyrics(raw: str | None) -> LyricsSpec:
         else:
             sung.append(stripped)
     return LyricsSpec(section_names=sections, directives=directives, sung_lines=sung)
+
+
+def parse_song_source(raw: str | None) -> SongSource:
+    """Preserve ordered user markup for the semantic composer.
+
+    Existing brace markup does not state whether a directive applies to the
+    preceding section, the following section, or the whole song. Retaining its
+    line number preserves source location without inventing that association.
+    """
+    if not raw or not raw.strip():
+        return SongSource()
+    items: list[SourceItem] = []
+    for line_number, line in enumerate(raw.splitlines(), start=1):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if (section := _SECTION.match(stripped)) and section["name"].strip():
+            items.append(
+                SourceSection(line_number=line_number, name=section["name"].strip())
+            )
+        elif (directive := _DIRECTIVE.match(stripped)) and directive["text"].strip():
+            items.append(
+                SourceDirective(line_number=line_number, text=directive["text"].strip())
+            )
+        else:
+            items.append(SourceLyricLine(line_number=line_number, text=stripped))
+    return SongSource(items=tuple(items))
 
 
 def syllable_key(text: str) -> str:
