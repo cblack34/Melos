@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from copy import deepcopy
+from typing import Any
 
 import pytest
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, ToolCallPart
@@ -17,6 +19,8 @@ from melos.generation.semantic_composer import (
     composition_input_from,
 )
 from melos.realization import realize_score
+
+_COMPOSITION_INPUT_PREFIX = "Whole-song composition input (JSON):\n"
 
 
 def beat(numerator: int, denominator: int = 1) -> dict[str, int]:
@@ -207,6 +211,16 @@ def text_parts(messages: list[ModelMessage]) -> list[str]:
     return contents
 
 
+def whole_song_input(messages: list[str]) -> dict[str, Any]:
+    payload_messages = [
+        message for message in messages if message.startswith(_COMPOSITION_INPUT_PREFIX)
+    ]
+    assert len(payload_messages) == 1
+    payload = json.loads(payload_messages[0].removeprefix(_COMPOSITION_INPUT_PREFIX))
+    assert isinstance(payload, dict)
+    return payload
+
+
 def composer_returning(
     payloads: list[dict[str, object]], histories: list[list[str]]
 ) -> PydanticAISemanticScoreComposer:
@@ -235,31 +249,23 @@ async def test_complete_ordered_context_reaches_one_whole_song_composer() -> Non
     assert input_data.requested_instruments.include == ("Flute",)
     assert input_data.requested_instruments.exclude == ("Trumpet",)
     assert input_data.source.sung_text == request.lyrics_spec.sung_text
-    prompt = histories[0][-1]
-    assert '"raw_user_content":{"prompt":"a warm folk song"' in prompt
-    assert '"resolved_constraints":{"tempo_bpm":96.0,"key":"G"' in prompt
-    assert (
-        '"requested_instruments":{"include":["Flute"],"exclude":["Trumpet"]}' in prompt
+    payload = whole_song_input(histories[0])
+    expected_constraints = input_data.resolved_constraints.model_dump(mode="json")
+    expected_instruments = input_data.requested_instruments.model_dump(mode="json")
+    assert payload["raw_user_content"] == input_data.raw_user_content.model_dump(
+        mode="json"
     )
-    assert '"line_number":1,"kind":"section","name":"Verse"' in prompt
-    assert '"line_number":4,"kind":"section","name":"Chorus"' in prompt
-    assert (
-        '"line_number":3,"kind":"directive","text":"Keep the chorus restrained."'
-        in prompt
-    )
-    assert (
-        '"line_number":2,"kind":"lyric","id":"lyric-line-2","text":"First line"'
-        in prompt
-    )
-    assert (
-        '"line_number":5,"kind":"lyric","id":"lyric-line-5","text":"Second line"'
-        in prompt
-    )
-    assert '"injected_instructions"' in prompt
-    assert "Compose exactly one complete whole-song SemanticScore." in prompt
+    assert payload["resolved_constraints"] == expected_constraints
+    assert payload["requested_instruments"] == expected_instruments
+    assert payload["source"] == input_data.source.model_dump(mode="json")
+    assert payload["injected_instructions"] == [
+        instruction.model_dump(mode="json")
+        for instruction in input_data.injected_instructions
+    ]
     assert all(
         "Compose exactly one complete whole-song SemanticScore." not in message
-        for message in histories[0][:-1]
+        for message in histories[0]
+        if not message.startswith(_COMPOSITION_INPUT_PREFIX)
     )
 
 
@@ -280,11 +286,12 @@ async def test_retry_keeps_complete_context_and_never_calls_a_section_composer()
     assert result.tempo_bpm == 96
     assert len(histories) == 2
     for history in histories:
-        complete_context = history[0]
-        assert '"name":"Verse"' in complete_context
-        assert '"name":"Chorus"' in complete_context
-        assert '"text":"Keep the chorus restrained."' in complete_context
-        assert "section composition input" not in complete_context
+        payload = whole_song_input(history)
+        assert payload["raw_user_content"] == input_data.raw_user_content.model_dump(
+            mode="json"
+        )
+        assert payload["source"] == input_data.source.model_dump(mode="json")
+        assert all("section composition input" not in message for message in history)
     assert any(
         "tempo_bpm must exactly match the resolved constraint: expected 96.0, got 120.0"
         in prompt
